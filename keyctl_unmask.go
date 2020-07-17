@@ -253,6 +253,8 @@ func hack_main() {
 
 }
 
+//TODO add the link syscalls from the library here
+
 var max int
 var min int
 var keyid int
@@ -332,6 +334,14 @@ func main() {
 	//var max = 999999999
 }
 
+type Key struct {
+	KeyId          int32
+	Name           string
+	String_Content string
+	Byte_Content   []byte
+	Comments       string
+}
+
 func hunter() {
 	bar := pb.StartNew(count)
 	// bar := pb.StartNew(max)
@@ -346,48 +356,33 @@ func hunter() {
 
 		breturn, err := describeKeyId(keyId(i))
 		if err != nil {
+			k := Key{}
+			k.KeyId = int32(i)
+			fmt.Println(string(breturn))
+			// TODO process results of breturn
+
 			if msg := err.Error(); msg == "permission denied" {
 				//fmt.Println("Found a key but denied:", i)
 				fmt.Printf("X")
+				//TODO if permission denied, try to find session and link
+
 				output := fmt.Sprintf("%d\n", i)
 				f.WriteString(output)
+				//TODO update k()
 			} else if msg := err.Error(); msg == "required key not available" {
 				//fmt.Println("no key found here:", i)
 			} else {
 				fmt.Println("%d: %s", i, err.Error())
+				//TODO check for weird errors
 
 			}
 		} else {
 			output := fmt.Sprintf("%d : %s \n", i, string(breturn))
 			io.WriteString(f, output)
+			// TODO explain output
 		}
+		//TODO output json to file
 
-		// keyid, err := listKeys(keyId(i))
-		// fmt.Println(keyid, err)
-
-		// rkey := keyctl.Key{id: 0}
-
-		// rkey.id = i
-		// rkey.Id = int32(i)
-		// key, err := rkey.Get()
-
-		// rref := keyctl.Reference{}
-		// rref.Id = int32(i)
-		// key, err := rref.Get()
-
-		// if msg := err.Error(); msg == "permission denied" {
-		// 	//fmt.Println(rref.Info())
-		// 	//fmt.Println()
-		// 	// ring, _ := keyctl.SessionKeyring()
-		// 	// refs, _ := keyctl.ListKeyring(ring)
-		// 	// fmt.Println(refs)
-		// 	fmt.Println(fmt.Sprintf("%T", key))
-
-		// 	//fmt.Println(key.Info())
-		// }
-
-		// fmt.Println(rref.Info())
-		// fmt.Println(rref.Valid())
 	}
 	bar.Finish()
 }
