@@ -1,11 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -188,6 +189,23 @@ func describeKeyId(id keyId) ([]byte, error) {
 	return b1[:size-1], nil
 }
 
+func keyctl_Read(id keyId, b *byte, size int) (int32, error) {
+	v1, _, errno := syscall.Syscall6(syscall_keyctl, uintptr(keyctlRead), uintptr(id), uintptr(unsafe.Pointer(b)), uintptr(size), 0, 0)
+	if errno != 0 {
+		return -1, errno
+	}
+
+	return int32(v1), nil
+}
+
+func keyctl_Unlink(id, ring keyId) error {
+	_, _, errno := syscall.Syscall(syscall_keyctl, uintptr(keyctlUnlink), uintptr(id), uintptr(ring))
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
 func keyctl(cmd keyctlCommand, args ...uintptr) (r1 int32, r2 int32, err error) {
 	a := make([]uintptr, 6)
 	l := len(args)
@@ -276,6 +294,7 @@ func init() {
 func main() {
 	flag.Parse()
 
+	// Check for hunt mode or just key mode
 	if keyid != 0 {
 		fmt.Println(keyid)
 		key_results, err := describeKeyId(keyId(keyid))
@@ -288,58 +307,19 @@ func main() {
 		hunter()
 	}
 
-	// keyring, err := keyctl.SessionKeyring()
-	// key, err := keyring.Search("markskey")
-	// markkey := int32(key.Id())
-	// fmt.Println(markkey)
-
-	// nkey, nerr := keyring.Search(string(markkey))
-	// k := keyctl.Key{}
-	// //k.Id = 123456789
-	// fmt.Println(keyctl.SessionKeyring(123456789))
-	// fuckyou, err := keyctl.Keyring()
-	// fmt.Println(fuckyou)
-
-	// ref := keyctl.Reference{}
-	// ref.Id = 123456789
-	// fmt.Println(ref.Valid())
-	// fmt.Println(ref.Info())
-	// fmt.Println("I just printed ref")
-
-	// realref := 682466440
-	// rref := keyctl.Reference{}
-	// rref.Id = int32(realref)
-	// fmt.Println(rref.Info())
-	// fmt.Println(rref.Valid())
-
-	// myref, err := ref.Get(ref.Id)
-	// fmt.Println(err)
-	// fmt.Println(myref)
-
-	//ref := keyctl.Reference{}
-
-	//fmt.Println(int32(nkey.Id()))
-
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// fmt.Println(key)
-
-	// var testkey = 682466440
-	// var min = testkey - 5
-	// var max = testkey + 5
-
-	//var min = 0
-	//var max = 999999999
 }
 
 type Key struct {
 	KeyId          int32
 	Name           string
+	Type           string
+	Uid            string
+	Gid            string
+	Perms          string
 	String_Content string
 	Byte_Content   []byte
-	Comments       string
+	Comments       []string
+	size           int
 }
 
 func hunter() {
@@ -355,15 +335,26 @@ func hunter() {
 		bar.Increment()
 
 		breturn, err := describeKeyId(keyId(i))
+		k := Key{}
+		k.KeyId = int32(i)
 		if err != nil {
-			k := Key{}
-			k.KeyId = int32(i)
-			fmt.Println(string(breturn))
-			// TODO process results of breturn
+			//k.KeyId = int32(i)
 
 			if msg := err.Error(); msg == "permission denied" {
 				//fmt.Println("Found a key but denied:", i)
 				fmt.Printf("X")
+				//TODO set the name
+				aReturn := strings.Split(string(breturn), ";")
+
+				// TODO get the uid and other info
+				k.Type = aReturn[0]
+				k.Uid = aReturn[1]
+				k.Gid = aReturn[2]
+				k.Perms = aReturn[3]
+				k.Name = aReturn[4]
+
+				k.Comments = append(k.Comments, "Permission denied")
+
 				//TODO if permission denied, try to find session and link
 
 				output := fmt.Sprintf("%d\n", i)
@@ -377,12 +368,64 @@ func hunter() {
 
 			}
 		} else {
-			output := fmt.Sprintf("%d : %s \n", i, string(breturn))
-			io.WriteString(f, output)
+			fmt.Println(string(breturn))
+			// process results of breturn
+			aReturn := strings.Split(string(breturn), ";")
+
+			// TODO get the uid and other info
+			k.Type = aReturn[0]
+			k.Uid = aReturn[1]
+			k.Gid = aReturn[2]
+			k.Perms = aReturn[3]
+			k.Name = aReturn[4]
+
+			contents, err := k.Get()
+			if err == nil {
+				k.Byte_Content = contents
+				k.String_Content = string(contents)
+			}
+
+			output, _ := json.MarshalIndent(k, "", " ")
+			fmt.Print(string(output))
+
+			//output := fmt.Sprintf("%d : %s \n", i, string(breturn))
+			f.Write(output)
 			// TODO explain output
 		}
 		//TODO output json to file
 
 	}
 	bar.Finish()
+}
+
+func (k Key) Get() ([]byte, error) {
+	var (
+		b        []byte
+		err      error
+		sizeRead int
+	)
+
+	if k.size == 0 {
+		k.size = 512
+	}
+
+	size := k.size
+
+	b = make([]byte, int(size))
+	sizeRead = size + 1
+	for sizeRead > size {
+		r1, err := keyctl_Read(keyId(k.KeyId), &b[0], size)
+		if err != nil {
+			return nil, err
+		}
+
+		if sizeRead = int(r1); sizeRead > size {
+			b = make([]byte, sizeRead)
+			size = sizeRead
+			sizeRead = size + 1
+		} else {
+			k.size = sizeRead
+		}
+	}
+	return b[:k.size], err
 }
