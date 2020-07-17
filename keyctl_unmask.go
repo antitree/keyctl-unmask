@@ -163,7 +163,7 @@ func listKeys(id keyId) ([]keyId, error) {
 	return keys, nil
 }
 
-func describeKeyId(id keyId) ([]byte, error) {
+func (k Key) describeKeyId() ([]byte, error) {
 	var (
 		b1             []byte
 		size, sizeRead int
@@ -173,7 +173,7 @@ func describeKeyId(id keyId) ([]byte, error) {
 	size = len(b1)
 	sizeRead = size + 1
 	for sizeRead > size {
-		r1, _, errno := syscall.Syscall6(syscall_keyctl, uintptr(keyctlDescribe), uintptr(id), uintptr(unsafe.Pointer(&b1[0])), uintptr(size), 0, 0)
+		r1, _, errno := syscall.Syscall6(syscall_keyctl, uintptr(keyctlDescribe), uintptr(keyId(k.KeyId)), uintptr(unsafe.Pointer(&b1[0])), uintptr(size), 0, 0)
 		if errno != 0 {
 			return nil, errno
 		}
@@ -305,13 +305,24 @@ func main() {
 
 	// Check for hunt mode or just key mode
 	if keyid != 0 {
-		fmt.Println(keyid)
-		key_results, err := describeKeyId(keyId(keyid))
+		//fmt.Println(keyid)
+		k := Key{KeyId: int32(keyid)}
+		key_results, err := k.describeKeyId()
+		//key_results, err := describeKeyId(keyId(keyid))
 		if err == nil {
-			fmt.Println(string(key_results))
+			//fmt.Println(string(key_results))
+			k.populate_describe(key_results)
+			if k.Type == "keyring" {
+				k.populate_subkeys()
+			} else if k.Type == "user" {
+				k.Get()
+			}
 		} else {
 			fmt.Println(err.Error())
 		}
+		output, _ := json.MarshalIndent(k, "", " ")
+		fmt.Println(string(output))
+
 	} else if hunt {
 		hunter()
 	}
@@ -334,7 +345,7 @@ type Key struct {
 }
 
 func hunter() {
-	bar := pb.StartNew(count)
+	bar := pb.StartNew(max)
 	// bar := pb.StartNew(max)
 
 	f, _ := os.Create(output_path)
@@ -344,142 +355,96 @@ func hunter() {
 	//for i := 0; i < count; i++ {
 	for i := min; i < max; i++ {
 		bar.Increment()
+		fmt.Println(i)
 
 		// TODO this should be its own function?
-		breturn, err := describeKeyId(keyId(i))
-		k := Key{}
-		k.KeyId = int32(i)
+		k := Key{KeyId: int32(i)}
+		//breturn, err := describeKeyId(keyId(i))
+		breturn, err := k.describeKeyId()
 		if err != nil {
-			//k.KeyId = int32(i)
-
 			if msg := err.Error(); msg == "permission denied" {
-				//fmt.Println("Found a key but denied:", i)
 				k.Valid = true
-				fmt.Printf("X")
-
 				k.Comments = append(k.Comments, "Found key but describe permission denied")
-
 			} else if msg := err.Error(); msg == "required key not available" {
 				//fmt.Println("no key found here:", i)
 			} else {
 				fmt.Println("%d: %s", i, err.Error())
 				//TODO check for weird errors
-
 			}
+
 		} else {
 			//fmt.Println(string(breturn))
 			// process results of breturn
 			k.Valid = true
-			aReturn := strings.Split(string(breturn), ";")
-
-			// Populate info from results
-			k.Type = aReturn[0]
-			k.Uid = aReturn[1]
-			k.Gid = aReturn[2]
-			k.Perms = aReturn[3]
-			k.Name = aReturn[4]
+			k.populate_describe(breturn)
 
 			if k.Type == "keyring" {
 				//fmt.Println("Found a keyring!")
 				// list keys in keyring
-				nkid, err := listKeys(keyId(k.KeyId))
-				// TODO try and read found keys
-				if err != nil {
-					fmt.Println(err.Error())
-				} else {
-					//fmt.Println("Trying to hunt its keys")
-					for _, kid := range nkid {
-						// Turn it into a key
-						//fmt.Println("Hunting keyid: ", kid)
-						k.Subkeys = append(k.Subkeys, Key{KeyId: int32(kid), Valid: true})
-						//sk := Key{KeyId: int32(kid), Valid: true}
-					}
+				k.populate_subkeys()
 
-					// Unlinked hunt mode
-					for i, subkey := range k.Subkeys {
-						// TODO why even do this?
+				// Linked hunt mode
+				// HACK TODO need to change the keyid to the current session
+				// err := keyctl_Link(keyId(k.KeyId), keyId(815294186))
+				// if err == nil {
+				// 	for i, subkey := range k.Subkeys {
+				// 		// Populate key information
+				// 		dresults, err := subkey.describeKeyId()
+				// 		//dresults, err := describeKeyId(keyId(subkey.KeyId))
+				// 		//TODO this is duplicate
+				// 		//TODO can this be recursive as a method for when you have keyrings in keyrings?
+				// 		aReturn := strings.Split(string(dresults), ";")
 
-						// Populate key information
-						dresults, err := describeKeyId(keyId(subkey.KeyId))
-						if err == nil {
-							//TODO this is duplicate
-							//TODO can this be recursive as a method for when you have keyrings in keyrings?
-							aReturn := strings.Split(string(dresults), ";")
+				// 		// Populate info from results
+				// 		k.Subkeys[i].Type = aReturn[0]
+				// 		k.Subkeys[i].Uid = aReturn[1]
+				// 		k.Subkeys[i].Gid = aReturn[2]
+				// 		k.Subkeys[i].Perms = aReturn[3]
+				// 		k.Subkeys[i].Name = aReturn[4]
 
-							// Populate info from results
-							k.Subkeys[i].Type = aReturn[0]
-							k.Subkeys[i].Uid = aReturn[1]
-							k.Subkeys[i].Gid = aReturn[2]
-							k.Subkeys[i].Perms = aReturn[3]
-							k.Subkeys[i].Name = aReturn[4]
+				// 		kresults, err := subkey.Get()
+				// 		if err == nil {
+				// 			//fmt.Println("Wow looky here link")
+				// 			k.Subkeys[i].Byte_Content = kresults
+				// 			k.Subkeys[i].String_Content = string(kresults)
+				// 			//fmt.Println(string(kresults))
+				// 		} else {
+				// 			//TODO what else can happen?
+				// 			fmt.Println(err.Error())
+				// 		}
 
-							kresults, err := subkey.Get()
-							if err == nil {
-								//fmt.Println("Wow looky here link")
-								k.Subkeys[i].Byte_Content = kresults
-								k.Subkeys[i].String_Content = string(kresults)
-								//fmt.Println(string(kresults))
-							} else {
-								//TODO what else can happen?
-								fmt.Println(err.Error())
-							}
-						}
-
-					}
-
-					// Linked hunt mode
-					// HACK TODO need to change the keyid to the current session
-					err := keyctl_Link(keyId(k.KeyId), keyId(815294186))
-					if err == nil {
-						for i, subkey := range k.Subkeys {
-							// Populate key information
-							dresults, err := describeKeyId(keyId(subkey.KeyId))
-							//TODO this is duplicate
-							//TODO can this be recursive as a method for when you have keyrings in keyrings?
-							aReturn := strings.Split(string(dresults), ";")
-
-							// Populate info from results
-							k.Subkeys[i].Type = aReturn[0]
-							k.Subkeys[i].Uid = aReturn[1]
-							k.Subkeys[i].Gid = aReturn[2]
-							k.Subkeys[i].Perms = aReturn[3]
-							k.Subkeys[i].Name = aReturn[4]
-
-							kresults, err := subkey.Get()
-							if err == nil {
-								//fmt.Println("Wow looky here link")
-								k.Subkeys[i].Byte_Content = kresults
-								k.Subkeys[i].String_Content = string(kresults)
-								//fmt.Println(string(kresults))
-							} else {
-								//TODO what else can happen?
-								fmt.Println(err.Error())
-							}
-
-						}
-						// Removing link to session
-						keyctl_Unlink(keyId(k.KeyId), keyId(815294186))
-					}
-
-				}
+				// 	}
+				// 	// Removing link to session
+				// 	keyctl_Unlink(keyId(k.KeyId), keyId(815294186))
+				// }
 
 			} else if k.Type == "user" {
-				fmt.Println("Found a user key")
+				fmt.Println("Found a user key, skipping")
+			} else if k.Type == "" {
+				fmt.Println("Type is blank")
 			} else {
-				fmt.Println("Found another type of key I think")
+				fmt.Println("Found another type of key I think: ", k.Type)
+				continue
 			}
+
+			// output, _ := json.MarshalIndent(k, "", " ")
+			// fmt.Println(string(output))
 
 			//if permission denied, try to find session and link
-			contents, err := k.Get()
-			if err == nil {
-				k.Byte_Content = contents
-				k.String_Content = string(contents)
-			} else if msg := err.Error(); msg == "permission denied" {
-				//TODO try to find the session ID
-				k.Comments = append(k.Comments, "Read permission denied to user")
+			err := k.Get()
+			if err != nil {
+				if msg := err.Error(); msg == "permission denied" {
+					k.Comments = append(k.Comments, "Read permission denied to user")
+				} else if err != nil {
+					// Todo handle other errors?
+
+				}
 			}
 
+			fmt.Println("I made it here")
+
 		}
+
 		if k.Valid {
 			//TODO output json to file
 			output, _ := json.MarshalIndent(k, "", " ")
@@ -491,9 +456,52 @@ func hunter() {
 
 	}
 	bar.Finish()
+	fmt.Println("Output saved to: ", output_path)
 }
 
-func (k Key) Get() ([]byte, error) {
+func (k *Key) populate_describe(bdesc []byte) error {
+	k.Valid = true
+	aReturn := strings.Split(string(bdesc), ";")
+
+	// Populate info from results
+	k.Type = aReturn[0]
+	k.Uid = aReturn[1]
+	k.Gid = aReturn[2]
+	k.Perms = aReturn[3]
+	k.Name = aReturn[4]
+
+	// output, _ := json.MarshalIndent(k, "", " ")
+	// fmt.Println("populate_describe: ", string(output))
+
+	return nil
+}
+
+func (k *Key) populate_subkeys() (int, error) {
+	nkid, err := listKeys(keyId(k.KeyId))
+	if err != nil {
+		return 0, err
+	}
+	var i int
+	for _, kid := range nkid {
+		// Turn it into a key
+		i++
+		nk := Key{KeyId: int32(kid)}
+		nkdesc, err := nk.describeKeyId()
+		// TODO IDK if you need to hunt for subkeys here because
+		// you're already going to find them from /proc/keys
+		// and you're going to get permission problems for subkeys
+		// I would assume? idk.
+		if err == nil {
+			//fmt.Println(nkdesc)
+			nk.populate_describe(nkdesc)
+			nk.populate_subkeys()
+			k.Subkeys = append(k.Subkeys, nk)
+		}
+	}
+	return i, nil
+}
+
+func (k *Key) Get() error {
 	var (
 		b        []byte
 		err      error
@@ -511,7 +519,7 @@ func (k Key) Get() ([]byte, error) {
 	for sizeRead > size {
 		r1, err := keyctl_Read(keyId(k.KeyId), &b[0], size)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if sizeRead = int(r1); sizeRead > size {
@@ -522,5 +530,10 @@ func (k Key) Get() ([]byte, error) {
 			k.size = sizeRead
 		}
 	}
-	return b[:k.size], err
+
+	content := b[:k.size]
+	k.Byte_Content = content
+	k.String_Content = string(content)
+
+	return err
 }
