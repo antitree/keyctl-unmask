@@ -385,14 +385,14 @@ func hunter() {
 				k.String_Content = string(contents)
 			}
 
-			output, _ := json.MarshalIndent(k, "", " ")
-			fmt.Print(string(output))
-
-			//output := fmt.Sprintf("%d : %s \n", i, string(breturn))
-			f.Write(output)
-			// TODO explain output
 		}
-		//TODO output json to file
+		if k.Name != "" {
+			//TODO output json to file
+			output, _ := json.MarshalIndent(k, "", " ")
+			//fmt.Print(string(output))
+			f.Write(output)
+		}
+		// TODO explain output
 
 	}
 	bar.Finish()
