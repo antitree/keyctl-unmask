@@ -7,7 +7,7 @@ within a container.
 
 From within a container you simply running `keyctl-unmask` will run like this:
 
-![docker demo](docker_demo.gif)
+![docker demo](/example/docker_demo.gif)
 
 ~~~bash
 Search for Linux kernel keyrings even if /proc/keys are masked in a container
