@@ -1,74 +1,84 @@
-# Keyctl-hunt
+# Keyctl-demask
+
+This tool aims to unmask keychains and keys used by the Linux kernel from 
+within a container. 
+
+## Usage 
+
+From within a container you simply running `keyctl-unmask` will run like this:
+
+![docker demo](docker_demo.gif)
+
+~~~bash
+Search for Linux kernel keyrings even if /proc/keys are masked in a container
+Usage: ./keyctl_unmask  argument ...
+  -hunt
+        Enable brute force mode to search for key ids (Default enabled) (default true)
+  -key int
+        Specific key ID to test (int32)
+  -max int
+        Max key id range (default 999999999)
+  -min int
+        Minimum key id range (default 1)
+  -output string
+        Output path (default "./keyctl_ids")
+~~~
+
+## Background 
 
 the `keyctl()` syscall allows a user to interact with Linux kernel keyrings 
 which store sensitive information per user, session, threat, or process. These
 keyrings are used by many different applications and are visible in 
 `/proc/keys`. 
 
-For containers, this was deemed a security risk you don't want your containers
-to be able to see your hosts keys but but the fix for this was to simply 
-"mask" `/proc/keys` so that `cat /proc/keys` would return no results. 
+For containers, this was deemed a security risk ( and you'd agree )
+you don't want your containers
+to be able to see your hosts' keys/keyrings but but the original 
+fix for this was to simply 
+"mask" `/proc/keys` so that `cat /proc/keys` would return no results.
 
-This mask is ... a mask and not a security control. 
+This tool Goes Florida on those masks.
 
-In reality, the mask just obfuscates the keys and there's nothing 
-preventing one container from issuing syscalls to the kernfinding the keys of another container, and even
-worse, keys of the host. 
+In reality, the mask just obfuscates the keys and you're free to 
+issue syscalls to the kernel requesting any
+keys you'd like. (Free as in Florida) 
+So here we're brute forcing an `int32` to guess the keyring ID's 
+and if they're found, we'll try to "Possess" them and then read the keys of another container... and even
+worse, keys of the host.
 
-# Hacks
+What kind of things are stored in the Linux keyring you might ask:
 
-So there's a subtle problem. When docker runs, it does make its own
-session keyring and by default you aren't connected to it. Boo.
+* `azcopy` for Azure
+* [fucking docker?](https://github.com/containers/image/blob/21244c96ad792ef415068dc1bc1ab82dffb68dc3/pkg/docker/config/config_linux.go)
+* systemd unit files
+* [trezord](https://github.com/trezor/trezor-core/blob/master/tools/keyctl)
+* [neo4j](https://github.com/neo4j-apps/neo4j-desktop/wiki/Troubleshooting-(Linux))
+* [kerberos](https://book.hacktricks.xyz/pentesting/pentesting-kerberos-88/harvesting-tickets-from-linux)
+* [cyberark](https://docs.cyberark.com/Product-Doc/OnlineHelp/AAM-DAP/Latest/en/Content/Deployment/MasterKeyEncryption/serverkeyencryption.html)
+* sssd-common
+* nfs-common
+* ceph-common
+* libecryptfs1
+* ecryptfs-utils
+* cifs-utils
+* [Google fscryptctl](https://github.com/google/fscryptctl/blob/142326810eb19d6794793db6d24d0775a15aa8e5/fscryptctl.c#L100)
+* What's the meaning of this shit? https://github.com/moby/qemu/pull/7/commits/e2e55ccdab5eee09d3be37a6bd05bff78bc77381
 
-So in container A:
+TODO uhhh hol up
 
-`keyctl add user antitreetest thisismysecret @s`
+    > # /snap/docker/VERSION/bin/docker-runc
+      #   "do not inherit the parent's session keyring"
+      #   "make session keyring searcheable"
+      # runC uses this to ensure the container doesn't have access to the host
+      # keyring
+      keyctl
+   vas ist das? https://github.com/snapcore/snapd/blob/263fe79965e1d438a257c038e710bf444eefcb4f/interfaces/builtin/docker_support.go
+  
+Let me be clear, there is an easy solution to this problem (seccomp, user namespaces) and it's 
+been known for years, but just like Florida's mask policy, we've decided that we 
+don't need these things all the time because we need developers to have
+the freedom to develop without the hindrence of security. 
 
-And container B:
-
-`keyctl show`
-
-You won't see the other session key. 
-
-And you even won't be able to read the session key if you directly:
-
-`keyctl print 123456`
-
-Would get "permission denied"
-
-BUT if you were to join the session:
-
-`keyctl join {PARENT_KEYRING_ID_OR_SESS} @s`
-
-You have now joined the session of another user. OMG. 
-
-Then you can run:
-
-`keyctl print 123456`
-or
-`keyctl show`
-
-and the key will be there. 
-
-To automate this I'm going to identify the difference between
-keyrings and keys, and iterate through all of them to determine
-if they're readable. 
-
-Right now it's like:
-
-* try keyid 
-* if keyid is valid 
-* read it
-* if permission denied ignore
-
-Should be
-
-* try keyid
-* if keyid is valid
-* read it
-* if permission denied, then try to find its session keyring
-* link the session keyring
-* read it again
 
 # Demo
 
@@ -85,13 +95,11 @@ Run a container (with seccomp disabled like Kubernetes) and guess they keys:
 ~~~
 docker run -it --security-opt seccomp=unconfined keyctl /bin/bash \
 > keyctl_hunter -key 123456790
-
+> cat keyctl_ids.txt
 ~~~
 
-NOTE: This doesn't work right now and only exposes keys between containers, not
-from the host unless the host has some silly keys exposed. 
 
-# Background
+# History of Containers and Keyctl
 
 The history of this issue goes like this:
 
@@ -105,7 +113,9 @@ The history of this issue goes like this:
 1. This is part of moby OCI defaults as the [MaskedPaths spec](https://github.com/moby/moby/blob/10866714412aea1bb587d1ad14b2ce1ba4cf4308/oci/defaults.go) but isn't exposed via Docker. 
 1. In 2019, the Linux Kernel adds support for [Keys Namespaces](https://lwn.net/Articles/779895/) but Moby does not support it. 
 
-The current state is that seccomp successfully defends from any risk here but it's a secondary security control so not a robust solution. User-Namespacing again will save the day because a seperate NS is created including a separate keyring -- but this isn't enabled by default. 
+The current state is that seccomp successfully defends from any risk here but it's a secondary security control so not a robust solution. 
+(*cough Kubernetes *cough)  
+User-Namespacing again will again save the day because a seperate namespace is created which includes one for a keyring -- but this isn't enabled by default.
 
 So we're back at where we were in 2016, containers using the keyring have a shared session keyring and inherently share private information with eachother. 
 
