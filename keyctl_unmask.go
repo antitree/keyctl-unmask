@@ -53,7 +53,7 @@ const (
 
 var debugSyscalls bool
 
-var count int
+//var count int
 
 type keyId int32
 type keyctlCommand int
@@ -259,11 +259,17 @@ func keyctl(cmd keyctlCommand, args ...uintptr) (r1 int32, r2 int32, err error) 
 var max int
 var min int
 var keyid int
-var hunt bool = true
+var hunt bool
 var output_path string
 
-func init() {
+func Usage() {
+	fmt.Println("Search for Linux kernel keyrings even if /proc/keys are masked in a container")
+	fmt.Printf("Usage: %s  argument ...\n", os.Args[0])
+	flag.PrintDefaults()
+}
 
+func init() {
+	flag.Usage = Usage
 	// Optional max count
 	flag.IntVar(&max, "max", 999999999, "Max key id range")
 	// OPtional min count
@@ -365,9 +371,6 @@ func hunter() {
 			if k.Type == "keyring" {
 				// Keyrings hold keys and are what we're looking for
 
-				// list keys in keyring and fill in description deails
-				k.populate_subkeys()
-
 				// If you don't "possess" the keyring then you will likely
 				// be unable to read its contents. This links the keyring
 				// to your personal session keyring, and then tries to read
@@ -375,6 +378,11 @@ func hunter() {
 				// syscall keyctl_link(src, -3=session keyring)
 				err := keyctl_Link(keyId(k.KeyId), keyId(keySpecSessionKeyring))
 				if err == nil {
+					// list keys in keyring and fill in description deails
+					// TODO this is populating subkeys before the link which
+					// means the sub-sub keys can't do a read() op
+					k.populate_subkeys()
+
 					// Try to read all the secrets of the keys
 					for i := range k.Subkeys {
 						err := k.Subkeys[i].Get()
@@ -467,9 +475,23 @@ func (k *Key) populate_subkeys() (int, error) {
 		// I would assume? idk.
 		if err == nil {
 			//fmt.Println(nkdesc)
-			nk.populate_describe(nkdesc)
-			nk.populate_subkeys()
+			err := nk.populate_describe(nkdesc)
+			if err != nil {
+				nk.Comments = append(nk.Comments, "Error parsing subkey describe text")
+			} else if nk.Type == "keyring" {
+				// If the subkey isn't a keyring cool because we'll find the keyrings later
+				nk.populate_subkeys() // TODO recursive, does this make sense?
+			} else if nk.Type == "user" {
+				err := nk.Get()
+				if err != nil {
+					//TODO Not sure why there's a permission error during subkey search. Maybe because no link
+					nk.Comments = append(nk.Comments, fmt.Sprint("Error during subkey read: ", err.Error()))
+				}
+			}
+
 			k.Subkeys = append(k.Subkeys, nk)
+		} else {
+			nk.Comments = append(nk.Comments, "Error during subkey describe")
 		}
 	}
 	return i, nil
