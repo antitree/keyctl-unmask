@@ -1,9 +1,10 @@
-module keyctl_unmask
+module keyctl-unmask
 
 go 1.14
 
 require (
 	github.com/cheggaaa/pb v2.0.7+incompatible
+	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/mattn/go-colorable v0.1.7 // indirect
 	gopkg.in/VividCortex/ewma.v1 v1.1.1 // indirect
 	gopkg.in/cheggaaa/pb.v2 v2.0.7 // indirect

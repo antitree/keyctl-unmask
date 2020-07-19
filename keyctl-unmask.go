@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/user"
 	"strings"
 	"syscall"
 	"unsafe"
 
 	"github.com/cheggaaa/pb"
+	"github.com/golang/glog"
 )
 
 const (
@@ -53,7 +55,7 @@ const (
 
 var debugSyscalls bool
 
-//var count int
+var count int
 
 type keyId int32
 type keyctlCommand int
@@ -274,6 +276,7 @@ var min int
 var keyid int
 var hunt bool
 var output_path string
+var debug bool
 
 func Usage() {
 	fmt.Println("Search for Linux kernel keyrings even if /proc/keys are masked in a container")
@@ -290,7 +293,7 @@ func init() {
 	// optional: specific key id
 	flag.IntVar(&keyid, "key", 0, "Specific key ID to test (int32)")
 	// Either hunt mode or key mode
-	flag.BoolVar(&hunt, "hunt", true, "Enable brute force mode to search for key ids (Default enabled)")
+	flag.BoolVar(&hunt, "hunt", true, "Enable brute force mode to search for key ids")
 	// JSON output path
 	flag.StringVar(&output_path, "output", "./keyctl_ids", "Output path")
 
@@ -299,22 +302,32 @@ func init() {
 func main() {
 	flag.Parse()
 
-	// load up persistent keys for the user
+	// Persistent keyrings are special in that they are associated to an individual UID
+	// and you have to restore them. Here we are looking for any persistent keyrings
+	// (like the ones used by kerberos) and linking them to the session keyring so we
+	// can search for them later.
+	self, _ := user.Current()
+	glog.Infoln("Trying to get_persistent keyrings for user %u")
+	if self.Uid != "0" {
+		glog.Warningf("Your UID is %s so persistent keyrings will be associated to this user. Run as root(UID 0) to get better results", self.Uid)
+	}
+
 	err := keyctl_Get_Persistent(int(-1), keyId(-3))
 	if err != nil {
 		//TODO react to error here
-		fmt.Println(err.Error())
+		glog.Error(err.Error())
+		glog.Error("Found an error")
 	}
 
 	// Just return an individual key if you want
 	// TODO update to use the linking stuff
 	if keyid != 0 {
-		//fmt.Println(keyid)
+		glog.Infoln(keyid)
 		k := Key{KeyId: int32(keyid)}
 		key_results, err := k.describeKeyId()
 		//key_results, err := describeKeyId(keyId(keyid))
 		if err == nil {
-			//fmt.Println(string(key_results))
+			glog.Infof("Describe keyid: %s", string(key_results))
 			k.populate_describe(key_results)
 			if k.Type == "keyring" {
 				k.populate_subkeys()
@@ -322,10 +335,10 @@ func main() {
 				k.Get()
 			}
 		} else {
-			fmt.Println(err.Error())
+			glog.Error(err.Error())
 		}
 		output, _ := json.MarshalIndent(k, "", " ")
-		fmt.Println(string(output))
+		glog.Infoln((string(output)))
 
 	} else if hunt {
 		hunter()
@@ -348,33 +361,10 @@ type Key struct {
 	size           int
 }
 
-func get_persistent_comments() {
-
-	// TODO do a search mode as well.. who would think this would work?
-	// // > On the surface, utilising a keyring seems to be the best option, we believe this to be generally true.
-	// However, we must remember that some mechanism must be offered for the user to access the tickets that
-	// they legitimately require. A necessary and useful mechanism such as this is however open to abuse by a
-	// malicious user. As noted in Section 3.2.2, the mechanism for interacting with kernel keyrings is the keyctl
-	// system call. One of the provided functions is the ability to search for a keyring by name. The name of the
-	// keyring in use can be parsed from the Kerberos configuration file /etc/krb5.conf which has read permission
-	// enable for anybody (octal 644) by default. An attacker can
-	//
-	// This translates to krb creates a persistent keyring.
-	// A persistent keyring is assigned to a UID
-	// We're UID 0 so no biggy but you have to approach it differently
-	// keyctl get_peristent @s 0
-	// ^^ link all persistent keyrings for our UID into our session so we can read
-	// then keyctl list @s
-	// then keyctl read persistent key
-	//
-	// Shit see https://github.com/jsipprell/keyctl/issues/4
-	// https://man7.org/linux/man-pages/man3/keyctl_get_persistent.3.html
-
-}
-
 func hunter() {
 	// Status bar
-	bar := pb.StartNew(max)
+	//bar := pb.StartNew(count)
+	bar := pb.Full.Start(max - min)
 
 	// Save results to file
 	f, _ := os.Create(output_path)
@@ -390,6 +380,9 @@ func hunter() {
 		// Collects information about a key ID but not its contents
 		breturn, err := k.describeKeyId()
 		if err != nil {
+			//TODO I'm able to find keys in a lot of fun ways, do I care about keys I can't
+			// read initially?
+			continue
 
 			if msg := err.Error(); msg == "permission denied" {
 				// Permission denied means you don't possess it
@@ -400,10 +393,10 @@ func hunter() {
 				k.Comments = append(k.Comments, "Found key but describe permission denied")
 			} else if msg := err.Error(); msg == "required key not available" {
 				// Required key not available confirms it doesn't exist
-				//fmt.Println("no key found here:", i)
+				glog.Infof("Key %d error: %s", i, err.Error())
 			} else {
 				// Not a lot of other errors that I know of
-				fmt.Println("%d: %s", i, err.Error())
+				glog.Errorf("%d: %s\n", i, err.Error())
 			}
 
 		} else {
@@ -432,7 +425,7 @@ func hunter() {
 						err := k.Subkeys[i].Get()
 						if err != nil {
 							//TODO what else can happen?
-							fmt.Println(err.Error())
+							glog.Error(err.Error())
 						}
 
 					}
@@ -443,15 +436,16 @@ func hunter() {
 			} else if k.Type == "user" {
 				// We skip this because we're brute forcing the keyrings anyways so we'll
 				// get the keys from there instead.
-				//fmt.Println("Found a user key, skipping")
+				glog.Infof("User key found: %d, skipping", i)
 				//TODO should I add a continue here if it's not a keyring?
 				continue
 			} else if k.Type == "" {
 				// I think there are some other key types or if an error...
-				//fmt.Println("Type is blank")
+				glog.Info("Type for key %d is blank", i)
+				continue
 			} else {
 				// Punt if something else happens
-				//fmt.Println("Found another type of key I think: ", k.Type)
+				glog.Errorf("Key %d is type %s, skipping for now", i, k.Type)
 				continue
 			}
 
@@ -464,7 +458,7 @@ func hunter() {
 					k.Comments = append(k.Comments, "Read permission denied to user")
 				} else if err != nil {
 					// TODO not sure what other errors could be
-					fmt.Println(err.Error())
+					glog.Error(err.Error())
 				}
 			}
 		}
@@ -472,8 +466,9 @@ func hunter() {
 		if k.Valid {
 			// Output as JSON
 			output, _ := json.MarshalIndent(k, "", " ")
+
 			// DEBUG
-			//fmt.Print(string(output))
+			glog.Info(string(output))
 			f.Write(output)
 		}
 	}
@@ -487,6 +482,10 @@ func (k *Key) populate_describe(bdesc []byte) error {
 	// 	user;1000;1000;3f1000000;myname
 	k.Valid = true // TODO do I need this here?
 	aReturn := strings.Split(string(bdesc), ";")
+	if len(aReturn) < 5 {
+		return fmt.Errorf("Something wrong parsing describekeyid results: %s", string(bdesc))
+
+	}
 
 	// Populate info from results
 	k.Type = aReturn[0]
@@ -510,7 +509,7 @@ func (k *Key) populate_subkeys() (int, error) {
 	var i int
 
 	for _, kid := range nkid {
-		// Turn it into a key object
+		// Turn each subkey ID into a key object
 		i++
 		nk := Key{KeyId: int32(kid)}
 		nkdesc, err := nk.describeKeyId()
@@ -519,21 +518,21 @@ func (k *Key) populate_subkeys() (int, error) {
 		// and you're going to get permission problems for subkeys
 		// I would assume? idk.
 		if err == nil {
-			//fmt.Println(nkdesc)
+			glog.Infof("Subkey description: %s", string(nkdesc))
 			err := nk.populate_describe(nkdesc)
 			if err != nil {
 				nk.Comments = append(nk.Comments, "Error parsing subkey describe text")
 			} else if nk.Type == "keyring" {
 				// If the subkey isn't a keyring cool because we'll find the keyrings later
 				nk.populate_subkeys() // TODO recursive, does this make sense?
-			} else if nk.Type == "user" {
+			} else {
+				// If the subkey is a user key, asymmetric key, or something else, try to read it
 				err := nk.Get()
 				if err != nil {
 					//TODO Not sure why there's a permission error during subkey search. Maybe because no link
-					nk.Comments = append(nk.Comments, fmt.Sprint("Error during subkey read: ", err.Error()))
+					nk.Comments = append(nk.Comments, fmt.Sprintf("Error during %s subkey read: %s", nk.Type, err.Error()))
 				}
 			}
-
 			k.Subkeys = append(k.Subkeys, nk)
 		} else {
 			nk.Comments = append(nk.Comments, "Error during subkey describe")
