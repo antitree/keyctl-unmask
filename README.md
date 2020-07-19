@@ -5,23 +5,52 @@ within a container.
 
 ## Usage 
 
-From within a container you simply running `keyctl-unmask` will run like this:
+From within a container simply running `keyctl-unmask` will run like this:
 
 ![docker demo](/example/docker_demo.gif)
 
 ~~~bash
 Search for Linux kernel keyrings even if /proc/keys are masked in a container
-Usage: ./keyctl_unmask  argument ...
+Usage: 
+
+        keyctl-unmask -min 0 -max 999999999 
+
+        keyctl-unmask -hunt
+
+        keyctl-unmask -stderrthreshold=Info
+
   -hunt
-        Enable brute force mode to search for key ids (Default enabled) (default true)
+        Enable brute force mode to search for key ids (default true)
   -key int
         Specific key ID to test (int32)
+  -logtostderr
+        log to standard error instead of files
   -max int
         Max key id range (default 999999999)
   -min int
         Minimum key id range (default 1)
   -output string
         Output path (default "./keyctl_ids")
+  -stderrthreshold value
+        logs at or above this threshold go to stderr
+~~~
+
+## Usage In Kubernetes
+
+Most Kubernetes clusters have the "benefit" of running without seccomp enabled so
+you can it like so:
+
+```shell
+kubectl run --rm -i \
+      -t keyctl-unmask --image=keyctl-unmask \
+      --image-pull-policy=Never --restart=Never \
+      -- keyctl-unmask -hunt  
+```
+
+Or to hunt across all your nodes....
+
+~~~
+?? daemonset + copy file results?
 ~~~
 
 ## Background 
@@ -131,5 +160,7 @@ So we're back at where we were in 2016, containers using the keyring have a shar
 * [IBM Blog covers syscalls used by keyctl](https://www.ibm.com/developerworks/library/l-key-retention/index.html)
 * [Linux Kernel Trusted and Encrypted Docs](https://www.kernel.org/doc/Documentation/security/keys-trusted-encrypted.txt)
 * 
-* 
-* 
+
+# Known Issues
+
+* In minikube (and likely other non-standard linux OS's) the `get_persistent` keyctl SYSCALL isn't supported. From minikube host for example: `keyctl get_persistent @s -1`

@@ -1,0 +1,19 @@
+# keyutil-unmask Pod example
+apiVersion: v1
+kind: Pod
+metadata:
+  name: keyutil-unmask
+spec:
+  containers:
+    - name: keyutil-unmask
+      image: antitree/keyctl-unmask
+      command: ['bash','-c','sleep 1000000']
+      volumeMounts:
+        - name: volume
+          mountPath: /keyctl-output
+  volumes:
+    - name: volume
+      persistentVolumeClaim:
+        claimName: keyctl-output
+
+

@@ -276,15 +276,17 @@ var min int
 var keyid int
 var hunt bool
 var output_path string
-var debug bool
 
 func Usage() {
+	bins := strings.SplitAfter(os.Args[0], "/")
+	bin := bins[len(bins)-1]
 	fmt.Println("Search for Linux kernel keyrings even if /proc/keys are masked in a container")
-	fmt.Printf("Usage: %s  argument ...\n", os.Args[0])
+	fmt.Printf("Usage: \n\n\t%s -min 0 -max 999999999 \n\n\t%s -hunt\n\n\t%s -stderrthreshold=Info\n\n", bin, bin, bin)
 	flag.PrintDefaults()
 }
 
 func init() {
+
 	flag.Usage = Usage
 	// Optional max count
 	flag.IntVar(&max, "max", 999999999, "Max key id range")
@@ -315,14 +317,14 @@ func main() {
 	err := keyctl_Get_Persistent(int(-1), keyId(-3))
 	if err != nil {
 		//TODO react to error here
-		glog.Error(err.Error())
-		glog.Error("Found an error")
+		//I think in the case of non-linux hosts, something weird happens here
+		glog.Errorf("Your OS doesn't appear to support persistent volumes: %s", err.Error())
 	}
 
 	// Just return an individual key if you want
 	// TODO update to use the linking stuff
 	if keyid != 0 {
-		glog.Infoln(keyid)
+		glog.Infoln("Key read mode enabled for key: " + string(keyid))
 		k := Key{KeyId: int32(keyid)}
 		key_results, err := k.describeKeyId()
 		//key_results, err := describeKeyId(keyId(keyid))
@@ -337,8 +339,15 @@ func main() {
 		} else {
 			glog.Error(err.Error())
 		}
+		// Convert to jsonoutput
 		output, _ := json.MarshalIndent(k, "", " ")
-		glog.Infoln((string(output)))
+
+		glog.Errorln((string(output)))
+
+		// Save results to file
+		f, _ := os.Create(output_path)
+		defer f.Close()
+		f.Write(output)
 
 	} else if hunt {
 		hunter()

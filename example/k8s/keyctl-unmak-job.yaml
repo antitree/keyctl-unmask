@@ -1,0 +1,67 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: test
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: keyctl-output
+  namespace: test
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keyctl-unmask
+  namespace: test
+  labels:
+    k8s-app: keyctl-unmask-app
+spec:
+  # selector:
+  #   matchLabels:
+  #     name: keyctl-unmask
+  template:
+    metadata:
+      labels:
+        name: keyctl-unmask
+    #RestartPolicy: "Never"
+    spec:
+      #tolerations:
+      # this toleration is to have the daemonset runnable on master nodes
+      # remove it if your masters can't run pods
+      #- key: node-role.kubernetes.io/master
+      #  effect: NoSchedule
+      restartPolicy: "Never"
+      containers:
+      - name: keyctl-unmask
+        image: antitree/keyctl-unmask
+        command: ["keyctl-unmask"]
+        args: ["-min", "100", "-max", "1000", "-output", "/keyctl-output/NODE_NAME"]
+        securityContext:
+          runAsUser: 0
+        
+        resources:
+          limits:
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: volume
+          mountPath: /keyctl-output
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+      volumes:
+      - name: volume
+        persistentVolumeClaim:
+          claimName: keyctl-output
+  backoffLimit: 4
