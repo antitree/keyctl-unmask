@@ -2,11 +2,12 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: keyctl-unmask-debug
+  name: keyctl-unmask-debug-pod
 spec:
   containers:
     - name: keyctl-unmask-debug
       image: antitree/keyctl-unmask
+      # TODO just make this a web server so it's easier to read or something
       command: ['bash','-c','sleep 1000000']
       volumeMounts:
         - name: volume
