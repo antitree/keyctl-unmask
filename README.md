@@ -1,7 +1,8 @@
-# Keyctl-demask
+# Keyctl-unmask
 
-This tool aims to unmask keychains and keys used by the Linux kernel from 
-within a container. 
+This tool goes Florida on container keyring masks. It is a tool to demonstrate the ineffectivity that containers have on isolating Linux Kernel keyrings. 
+
+See also [antitree/keyctl-unmask](https://hub.docker.com/repository/docker/antitree/keyctl-unmask) on Dockerhub
 
 ## Background 
 
@@ -43,8 +44,6 @@ hindrence of security.
 The most damaging scenario that I know of today for using this tool is 
 if you were crazy enough to deploy Kerberos into Kubernetes and configure
 it to use the KEYCTL credential storage. 
-
-## Usage 
 
 From within a container simply running `keyctl-unmask` will run like this:
 
@@ -233,7 +232,7 @@ root@keyctl-attacker:/# cat keyctl_ids
 
 Deploying as a Job will run this on each node in the cluster to let you figure out 
 if any cluster has interesting things within each Node. This creates a PVC to store
-the results of each Node's keychain. 
+the results of trying to extract each Node's keyrings. 
 
 ```bash
 keyctl apply -f examples/k8s/keyctl-unmask-job.yaml
@@ -288,10 +287,6 @@ So we're back at where we were in 2016, containers using the keyring have a shar
 * [Linux Kernel Trusted and Encrypted Docs](https://www.kernel.org/doc/Documentation/security/keys-trusted-encrypted.txt)
 * 
 
-## Known Issues
-
-* In minikube (and likely other non-standard linux OS's) the `get_persistent` keyctl SYSCALL isn't supported. From minikube host for example: `keyctl get_persistent @s -1`
-
 ## Pre-Emptive Responses To Potential Questions/Comments
 
 **What's you're deal with Florida?**
@@ -324,3 +319,7 @@ containers in that every container can access any other container's keyrings inc
 1. Ensure that your container runtimes have support for namespaced keyrings: [It's possible](https://lwn.net/Articles/779895/), if anyone cares.
 2. Make some of the protections that seccomp provides like blocking `KEYCTL` syscalls completely a compiled in security control .
 3. Make seccomp usable in our runtimes. (See separate rant)
+
+## Known Issues
+
+* In minikube (and likely other non-standard linux OS's) the `get_persistent` keyctl SYSCALL isn't supported. From minikube host for example: `keyctl get_persistent @s -1`
