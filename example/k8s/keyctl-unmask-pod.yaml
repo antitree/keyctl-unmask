@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: keyctl-unmask-debug-pod
+spec:
+  containers:
+      - name: keyctl-unmask
+        image: antitree/keyctl-unmask
+        command: ["keyctl-unmask"]
+        args: ["-min", "0", "-max", "999999999", "-stderrthreshold=Info"]
+        securityContext:
+          runAsUser: 0
