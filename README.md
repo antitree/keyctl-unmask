@@ -3,6 +3,42 @@
 This tool aims to unmask keychains and keys used by the Linux kernel from 
 within a container. 
 
+## Background 
+
+the `keyctl()` syscall allows a user to interact with Linux kernel keyrings
+which store sensitive information per user, session, threat, or process (among
+others). These keyrings are used by different applications and are usually in
+`/proc/keys`. 
+
+For containers, this was deemed a security risk ( and you might agree ) because you
+don't want your containers to be able to see your hosts' keys/keyrings or other
+containers' keyrings.  
+
+On part of the original fix for this was to simply "mask" `/proc/keys` so that `cat
+/proc/keys` would return no results. 
+
+**This tool Goes Florida on those masks.**
+
+In reality, the mask just obfuscates the keys and you're free to 
+issue syscalls to the kernel requesting any
+keys you'd like. (Free as in Florida) 
+So here we're:
+
+* brute forcing an `int32` to guess the keyring ID's 
+* asking the Linux kernel for information about the keyring, 
+* if they're found try to "Possess" them and subsequently read the keys of other containers
+* ... and even worse, the host
+
+Let me be clear, there is an easy solution to this problem (seccomp, user
+namespaces, compile time restrictions) and it's been known for years, but just
+like Florida's mask policy, we've decided that we don't need these things all
+the time because we need developers to have the freedom to develop without the
+hindrence of security.
+
+The most damaging scenario that I know of today for using this tool is 
+if you were crazy enough to deploy Kerberos into Kubernetes and configure
+it to use the KEYCTL credential storage. 
+
 ## Usage 
 
 From within a container simply running `keyctl-unmask` will run like this:
@@ -67,46 +103,12 @@ kubectl run whatever --rm -it --generator=Pod --image-pull-policy=Never \
       --overrides="$(cat example/k8s/keyctl-unmask-run.json)"
 ~~~
 
-## Background 
-
-the `keyctl()` syscall allows a user to interact with Linux kernel keyrings
-which store sensitive information per user, session, threat, or process (among
-others). These keyrings are used by different applications and are usually in
-`/proc/keys`. 
-
-For containers, this was deemed a security risk ( and you'd agree ) because you
-don't want your containers to be able to see your hosts' keys/keyrings or other
-containers' keyrings.  
-
-The original fix for this was to simply "mask" `/proc/keys` so that `cat
-/proc/keys` would return no results. 
-
-**This tool Goes Florida on those masks.**
-
-In reality, the mask just obfuscates the keys and you're free to 
-issue syscalls to the kernel requesting any
-keys you'd like. (Free as in Florida) 
-So here we're:
-
-* brute forcing an `int32` to guess the keyring ID's 
-* asking the Linux kernel for information about the keyring, 
-* if they're found try to "Possess" them and subsequently read the keys of other containers
-* ... and even worse, the host
-
-Let me be clear, there is an easy solution to this problem (seccomp, user
-namespaces, compile time restrictions) and it's been known for years, but just
-like Florida's mask policy, we've decided that we don't need these things all
-the time because we need developers to have the freedom to develop without the
-hindrence of security.
-
-The most damaging scenario that I know of today for using this tool is 
-if you were crazy enough to deploy Kerberos into Kubernetes and configure
-it to use the KEYCTL credential storage. 
+## Projects With Keyctl Related Code
 
 Here are some other projects that seem to be using keyctl syscalls (but don't hate on them, IDK if they need to run in containers):
 
 * `azcopy` for Azure
-* [docker?](https://github.com/containers/image/blob/21244c96ad792ef415068dc1bc1ab82dffb68dc3/pkg/docker/config/config_linux.go)
+* [This container image processing library](https://github.com/containers/image/blob/21244c96ad792ef415068dc1bc1ab82dffb68dc3/pkg/docker/config/config_linux.go)
 * systemd unit files
 * [trezord](https://github.com/trezor/trezor-core/blob/master/tools/keyctl)
 * [neo4j](https://github.com/neo4j-apps/neo4j-desktop/wiki/Troubleshooting-(Linux))
@@ -122,6 +124,14 @@ Here are some other projects that seem to be using keyctl syscalls (but don't ha
 
 
 <!-- TODO uhhh hol up
+
+```seccomp git:(master) ✗ docker run -it -v $(pwd)/output.test:/output.test --security-opt seccomp=$(pwd)/cyberark.seccomp keyctlunmask /bin/bash
+> keyctl get_persistent @s -1
+<WORKS>
+```
+^^ this means cyberark can still steal other people's kerberos shit
+and it also means that there's nothing cyberark can do to prevent someone from yanking th ekeys!                                              
+
 
 * What's the meaning of this shit? https://github.com/moby/qemu/pull/7/commits/e2e55ccdab5eee09d3be37a6bd05bff78bc77381
 
