@@ -47,38 +47,66 @@ kubectl run --rm -i \
       -- keyctl-unmask -hunt  
 ```
 
-Or to hunt across all your nodes....
+## Deployment as a Job
 
-~~~
-?? daemonset + copy file results?
+Deploying as a Job will run this on each node in the cluster to let you figure out 
+if any cluster has interesting things within each Node. 
+
+```bash
+keyctl apply -f examples/k8s/keyctl-unmask-job.yaml
+```
+
+### Kubernetes One Off Pod With Progress Bar
+
+The following one liner will start a hunt into the kubernetes cluster and 
+return the results with the progress bar in a clean way. 
+
+~~~shell
+kubectl run whatever --rm -it --generator=Pod --image-pull-policy=Never \
+      --restart=Never --image=antitree/keyctl-unmask \
+      --overrides="$(cat example/k8s/keyctl-unmask-run.json)"
 ~~~
 
 ## Background 
 
-the `keyctl()` syscall allows a user to interact with Linux kernel keyrings 
-which store sensitive information per user, session, threat, or process. These
-keyrings are used by many different applications and are visible in 
+the `keyctl()` syscall allows a user to interact with Linux kernel keyrings
+which store sensitive information per user, session, threat, or process (among
+others). These keyrings are used by different applications and are usually in
 `/proc/keys`. 
 
-For containers, this was deemed a security risk ( and you'd agree )
-you don't want your containers
-to be able to see your hosts' keys/keyrings but but the original 
-fix for this was to simply 
-"mask" `/proc/keys` so that `cat /proc/keys` would return no results.
+For containers, this was deemed a security risk ( and you'd agree ) because you
+don't want your containers to be able to see your hosts' keys/keyrings or other
+containers' keyrings.  
 
-This tool Goes Florida on those masks.
+The original fix for this was to simply "mask" `/proc/keys` so that `cat
+/proc/keys` would return no results. 
+
+**This tool Goes Florida on those masks.**
 
 In reality, the mask just obfuscates the keys and you're free to 
 issue syscalls to the kernel requesting any
 keys you'd like. (Free as in Florida) 
-So here we're brute forcing an `int32` to guess the keyring ID's 
-and if they're found, we'll try to "Possess" them and then read the keys of another container... and even
-worse, keys of the host.
+So here we're:
 
-What kind of things are stored in the Linux keyring you might ask:
+* brute forcing an `int32` to guess the keyring ID's 
+* asking the Linux kernel for information about the keyring, 
+* if they're found try to "Possess" them and subsequently read the keys of other containers
+* ... and even worse, the host
+
+Let me be clear, there is an easy solution to this problem (seccomp, user
+namespaces, compile time restrictions) and it's been known for years, but just
+like Florida's mask policy, we've decided that we don't need these things all
+the time because we need developers to have the freedom to develop without the
+hindrence of security.
+
+The most damaging scenario that I know of today for using this tool is 
+if you were crazy enough to deploy Kerberos into Kubernetes and configure
+it to use the KEYCTL credential storage. 
+
+Here are some other projects that seem to be using keyctl syscalls (but don't hate on them, IDK if they need to run in containers):
 
 * `azcopy` for Azure
-* [fucking docker?](https://github.com/containers/image/blob/21244c96ad792ef415068dc1bc1ab82dffb68dc3/pkg/docker/config/config_linux.go)
+* [docker?](https://github.com/containers/image/blob/21244c96ad792ef415068dc1bc1ab82dffb68dc3/pkg/docker/config/config_linux.go)
 * systemd unit files
 * [trezord](https://github.com/trezor/trezor-core/blob/master/tools/keyctl)
 * [neo4j](https://github.com/neo4j-apps/neo4j-desktop/wiki/Troubleshooting-(Linux))
@@ -91,9 +119,11 @@ What kind of things are stored in the Linux keyring you might ask:
 * ecryptfs-utils
 * cifs-utils
 * [Google fscryptctl](https://github.com/google/fscryptctl/blob/142326810eb19d6794793db6d24d0775a15aa8e5/fscryptctl.c#L100)
-* What's the meaning of this shit? https://github.com/moby/qemu/pull/7/commits/e2e55ccdab5eee09d3be37a6bd05bff78bc77381
 
-TODO uhhh hol up
+
+<!-- TODO uhhh hol up
+
+* What's the meaning of this shit? https://github.com/moby/qemu/pull/7/commits/e2e55ccdab5eee09d3be37a6bd05bff78bc77381
 
     > # /snap/docker/VERSION/bin/docker-runc
       #   "do not inherit the parent's session keyring"
@@ -101,15 +131,10 @@ TODO uhhh hol up
       # runC uses this to ensure the container doesn't have access to the host
       # keyring
       keyctl
-   vas ist das? https://github.com/snapcore/snapd/blob/263fe79965e1d438a257c038e710bf444eefcb4f/interfaces/builtin/docker_support.go
+   vas ist das? https://github.com/snapcore/snapd/blob/263fe79965e1d438a257c038e710bf444eefcb4f/interfaces/builtin/docker_support.go -->
   
-Let me be clear, there is an easy solution to this problem (seccomp, user namespaces) and it's 
-been known for years, but just like Florida's mask policy, we've decided that we 
-don't need these things all the time because we need developers to have
-the freedom to develop without the hindrence of security. 
 
-
-# Demo
+## Demo Docker
 
 In one container, create a new key:
 
@@ -127,8 +152,9 @@ docker run -it --security-opt seccomp=unconfined keyctl /bin/bash \
 > cat keyctl_ids.txt
 ~~~
 
+## Demo Kubernetes
 
-# History of Containers and Keyctl
+## History of Containers and KEYCTL Syscall
 
 The history of this issue goes like this:
 
@@ -149,7 +175,7 @@ User-Namespacing again will again save the day because a seperate namespace is c
 So we're back at where we were in 2016, containers using the keyring have a shared session keyring and inherently share private information with eachother. 
 
 
-# Further Reading
+## Further Reading
 
 * [Blog About this Issue in 2014](https://www.projectatomic.io/blog/2014/09/yet-another-reason-containers-don-t-contain-kernel-keyrings/)
 * [Indepth discussion on keys and how Posession works and is important](https://mjg59.dreamwidth.org/37333.html)
@@ -161,6 +187,39 @@ So we're back at where we were in 2016, containers using the keyring have a shar
 * [Linux Kernel Trusted and Encrypted Docs](https://www.kernel.org/doc/Documentation/security/keys-trusted-encrypted.txt)
 * 
 
-# Known Issues
+## Known Issues
 
 * In minikube (and likely other non-standard linux OS's) the `get_persistent` keyctl SYSCALL isn't supported. From minikube host for example: `keyctl get_persistent @s -1`
+
+## Pre-Emptive Responses To Potential Questions/Comments
+
+**What's you're deal with Florida?**
+IDK, just not feeling like a fan lately.
+
+**Yeah but the Docker seccomp profile takes care of this.**
+
+First, yes seccomp-bpf is a powerful tool and we should all use it for our containers but in the case of Docker, it's considered
+a nice-to-have (not to mention difficult to use at scale). Because it's not a primary security control, and because there's no way 
+to validate whether a seccomp profile is effective at runtime (see my other talks), we can't rely on it. It's a bolt on fix for the
+real issue. 
+
+**We should just enable user namespacing and this would be solved**
+
+If you say that all you have to do is enable user namespacing, I'd say "You're right!" and "No one does" and "It's not the default for Docker"
+Lets not say that user namespacing is a solution when enabling it breaks so many other things. 
+
+**Everyone knows about this issue, this isn't new**
+
+That this isn't new is mostly true in that it's been discussed since 2014 but it's been considered generally fixed since 
+we added masks to `/proc/keys` and fixed it via seccomp. 
+
+**No one uses keyrings**
+
+That seems to be true for many things but I think it's interesting that the technology is completely incompatible with
+containers in that every container can access any other container's keyrings including the hosts. 
+
+**Fine well what do you want someone to do about it?**
+
+1. Ensure that your container runtimes have support for namespaced keyrings: [It's possible](https://lwn.net/Articles/779895/), if anyone cares.
+2. Make some of the protections that seccomp provides like blocking `KEYCTL` syscalls completely a compiled in security control .
+3. Make seccomp usable in our runtimes. (See separate rant)
