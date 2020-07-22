@@ -39,11 +39,11 @@ From within a container simply running `keyctl-unmask` will run like this:
 Search for Linux kernel keyrings even if /proc/keys are masked in a container
 Usage: 
 
-        clogger -min 0 -max 999999999 
+        keyctl-unmask -min 0 -max 999999999 
 
-        clogger -hunt
+        keyctl-unmask -hunt
 
-        clogger -d
+        keyctl-unmask -d
 
   -d    Log everything to stdout (cloud logging not supported)
   -hunt
