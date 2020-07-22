@@ -62,9 +62,7 @@ Usage:
 
 ## Example in Docker
 
-Let me demonstrate how you can brute force all the keys of a host and take over every keyring. 
-
-In one container (called secret-server), create a new key representing a secret stored by a container:
+In one container, create a new key representing a secret stored by a container:
 
 ~~~shell
 docker run --name secret-server -it --security-opt \
@@ -78,18 +76,10 @@ Session Keyring
  911117332 --alswrv      0     0   \_ user: antitrees_secret
 ~~~
 
-We see that our customer's container has a session keyring ID of 899321446
-and a user key ID of 911117332. 
-
 Start a separate container and attach a shell so we can test some things
 
 ~~~shell
 docker run -it --name keyctl-attacker --security-opt seccomp=unconfined antitree/keyctl-unmask /bin/bash
-~~~
-But Docker masks it. So why not just guess the keyIDs? That's what `keyctl-unmask` is going to do. Take a range from 0 to 999999999 
-and try every possible key ID. On a modern computer it takes less than 10 minutes. 
-
-~~~shell
 root@keyctl-attacker:/# keyctl-unmask -min 0 -max 999999999
 10 / 10 [----------------------------------------------------------------------------] 100.00% ? p/s 0s
 Output saved to:  ./keyctl_ids
@@ -149,7 +139,7 @@ kubectl run whatever --rm -it --generator=Pod --image-pull-policy=Never \
       --overrides="$(cat example/k8s/keyctl-unmask-run.json)"
 ~~~
 
-## Demo Kubernetes 
+## Kubernetes All Nodes
 
 Deploying as a Job will run this on each node in the cluster to let you figure out 
 if any cluster has interesting things within each Node. This creates a PVC to store
