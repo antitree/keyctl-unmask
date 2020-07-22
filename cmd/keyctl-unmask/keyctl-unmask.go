@@ -45,7 +45,7 @@ func Usage() {
 	bins := strings.SplitAfter(os.Args[0], "/")
 	bin := bins[len(bins)-1]
 	fmt.Println("Search for Linux kernel keyrings even if /proc/keys are masked in a container")
-	fmt.Printf("Usage: \n\n\t%s -min 0 -max 999999999 \n\n\t%s -hunt\n\n\t%s -stderrthreshold=Info\n\n", bin, bin, bin)
+	fmt.Printf("Usage: \n\n\t%s -min 0 -max 999999999 \n\n\t%s -hunt -d\n\n\t%s -key 123456\n\n", bin, bin, bin)
 	flag.PrintDefaults()
 }
 
