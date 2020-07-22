@@ -78,7 +78,7 @@ func main() {
 	} else if quiet {
 		Clogger(ioutil.Discard, ioutil.Discard, ioutil.Discard)
 	} else {
-		Clogger(os.Stdout, os.Stdout, os.Stderr)
+		Clogger(ioutil.Discard, os.Stdout, os.Stderr)
 	}
 
 	self, _ := user.Current()
