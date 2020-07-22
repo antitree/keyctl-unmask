@@ -1,7 +1,7 @@
 # Keyctl-unmask
 
 This tool goes Florida on container keyring masks. It is a tool to demonstrate the ineffectivity that containers have on isolating Linux Kernel keyrings. 
-
+go ru
 See also [antitree/keyctl-unmask](https://hub.docker.com/repository/docker/antitree/keyctl-unmask) on Dockerhub
 
 ## Background 
@@ -53,26 +53,25 @@ From within a container simply running `keyctl-unmask` will run like this:
 Search for Linux kernel keyrings even if /proc/keys are masked in a container
 Usage: 
 
-        keyctl-unmask -min 0 -max 999999999 
+        clogger -min 0 -max 999999999 
 
-        keyctl-unmask -hunt
+        clogger -hunt
 
-        keyctl-unmask -stderrthreshold=Info
+        clogger -d
 
+  -d    Log everything to stdout (cloud logging not supported)
   -hunt
         Enable brute force mode to search for key ids (default true)
   -key int
         Specific key ID to test (int32)
-  -logtostderr
-        log to standard error instead of files
   -max int
         Max key id range (default 999999999)
   -min int
         Minimum key id range (default 1)
   -output string
         Output path (default "./keyctl_ids")
-  -stderrthreshold value
-        logs at or above this threshold go to stderr
+  -q    Quiet mode to disable logging and progress bar
+
 ~~~
 
 ## Usage In Kubernetes
