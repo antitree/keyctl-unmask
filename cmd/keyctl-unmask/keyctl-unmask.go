@@ -26,6 +26,21 @@ var (
 	quiet       bool
 )
 
+type Key struct {
+	KeyId          int32
+	Valid          bool
+	Name           string
+	Type           string
+	Uid            string
+	Gid            string
+	Perms          string
+	String_Content string
+	Byte_Content   []byte
+	Comments       []string
+	Subkeys        []Key
+	size           int
+}
+
 func Usage() {
 	bins := strings.SplitAfter(os.Args[0], "/")
 	bin := bins[len(bins)-1]
