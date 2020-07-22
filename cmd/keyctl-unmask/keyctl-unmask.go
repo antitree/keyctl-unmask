@@ -171,6 +171,8 @@ func (k *Key) Get() error {
 	return err
 }
 
+// TODO add watch_session mode for modern kernels
+
 func hunter() {
 	// Status bar
 	//bar := pb.StartNew(count)
