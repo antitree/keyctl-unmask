@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/user"
 	"strings"
@@ -270,11 +271,15 @@ func keyctl_Get_Persistent(uid int, ring keyId) error {
 // 	return
 // }
 
-var max int
-var min int
-var keyid int
-var hunt bool
-var output_path string
+var (
+	max         int
+	min         int
+	keyid       int
+	hunt        bool
+	output_path string
+	debug       bool
+	quiet       bool
+)
 
 func Usage() {
 	bins := strings.SplitAfter(os.Args[0], "/")
@@ -297,35 +302,28 @@ func init() {
 	flag.BoolVar(&hunt, "hunt", true, "Enable brute force mode to search for key ids")
 	// JSON output path
 	flag.StringVar(&output_path, "output", "./keyctl_ids", "Output path")
-
-	//logger.Info.Println("WTF is this doing?")
-	//Info.Println("WTF is this shit?")
-	//clogger.Infoln("WTF")
-
-	LogInit()
-
+	// Debug options
+	flag.BoolVar(&debug, "d", false, "Log everything to stdout (cloud logging not supported)")
+	// Quiet mode
+	flag.BoolVar(&quiet, "q", false, "Quiet mode to disable logging and progress bar")
 }
 
 func main() {
 	flag.Parse()
 
-	// fmt.Printf("THIS IS IN KEYCTL %T\n", Info)
-	// Info.Println("WTF am i doing")
-	//Info("WtF is thiS??")
-	//glog := logger()
-	//New()
-	// fmt.Printf("what is this? %T %T", Error.Println(), Info.Println())
-	// glog.Fatalln("What are we even doing?")
+	if debug {
+		// Setup verbose logging but don't use cloud
+		Clogger(os.Stdout, os.Stdout, os.Stderr)
+		Info.Println("Local logging enabled")
+	} else if quiet {
+		Clogger(ioutil.Discard, ioutil.Discard, ioutil.Discard)
+	} else {
+		Clogger(os.Stdout, os.Stdout, os.Stderr)
+	}
 
-	//clogger.Init()
-
-	// Persistent keyrings are special in that they are associated to an individual UID
-	// and you have to restore them. Here we are looking for any persistent keyrings
-	// (like the ones used by kerberos) and linking them to the session keyring so we
-	// can search for them later.
 	self, _ := user.Current()
 
-	Info.Println("Trying to get_persistent keyrings for user %u")
+	Info.Printf("Trying to get_persistent keyrings for user %s\n", self)
 	if self.Uid != "0" {
 		Warning.Printf("Your UID is %s so persistent keyrings will be associated to this user. Run as root(UID 0) to get better results", self.Uid)
 	}
@@ -391,6 +389,9 @@ func hunter() {
 	// Status bar
 	//bar := pb.StartNew(count)
 	bar := pb.Full.Start(max - min)
+	if quiet {
+		bar.SetTemplateString("")
+	}
 
 	// Save results to file
 	f, _ := os.Create(output_path)
