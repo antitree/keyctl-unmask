@@ -7,6 +7,6 @@ spec:
       - name: keyctl-unmask
         image: antitree/keyctl-unmask
         command: ["keyctl-unmask"]
-        args: ["-min", "0", "-max", "999999999", "-stderrthreshold=Info"]
+        args: ["-min", "0", "-max", "999999999", "-d"]
         securityContext:
           runAsUser: 0
