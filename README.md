@@ -7,34 +7,14 @@
 # Keyctl-unmask
 
 This tool goes Florida on container keyring masks. It is a tool to demonstrate the ineffectivity that containers have on isolating Linux Kernel keyrings. 
-See also [antitree/keyctl-unmask](https://hub.docker.com/repository/docker/antitree/keyctl-unmask) on Dockerhub
+
+See also 
+
+* [antitree/keyctl-unmask](https://hub.docker.com/repository/docker/antitree/keyctl-unmask) on Dockerhub
+* [Blog post](https://www.antitree.com/2020/07/keyctl-unmask-going-florida-on-the-state-of-containerizing-linux-keyrings/) explaining more about the issue
 
 
-
-On part of the original fix for this was to simply "mask" `/proc/keys` so that `cat
-/proc/keys` would return no results. 
-
-**This tool Goes Florida on those masks.**
-
-In reality, the mask just obfuscates the keys and you're free to 
-issue syscalls to the kernel requesting any
-keys you'd like. (Free as in Florida) 
-So here we're:
-
-* brute forcing an `int32` to guess the keyring ID's 
-* asking the Linux kernel for information about the keyring, 
-* if they're found try to "Possess" them and subsequently read the keys of other containers
-* ... and even worse, the host
-
-Let me be clear, there is an easy solution to this problem (seccomp, user
-namespaces, compile time restrictions) and it's been known for years, but just
-like Florida's mask policy, we've decided that we don't need these things all
-the time because we need developers to have the freedom to develop without the
-hindrence of security.
-
-The most damaging scenario that I know of today for using this tool is 
-if you were crazy enough to deploy Kerberos into Kubernetes and configure
-it to use the KEYCTL credential storage. 
+## Usage 
 
 From within a container simply running `keyctl-unmask` will run like this:
 
@@ -171,7 +151,7 @@ kubectl exec -it -n test keyctl-unmask-debug-pod -- /bin/bash
 ## Pre-Emptive Responses To Potential Questions/Comments
 
 **What's you're deal with Florida?**
-IDK, just not feeling like a fan lately.
+IDK, just not feeling like a fan lately. Wear a fucking mask. 
 
 **Yeah but the Docker seccomp profile takes care of this.**
 
