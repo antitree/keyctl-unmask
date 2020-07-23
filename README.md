@@ -7,7 +7,6 @@
 # Keyctl-unmask
 
 This tool goes Florida on container keyring masks. It is a tool to demonstrate the ineffectivity that containers have on isolating Linux Kernel keyrings. 
-go ru
 See also [antitree/keyctl-unmask](https://hub.docker.com/repository/docker/antitree/keyctl-unmask) on Dockerhub
 
 
