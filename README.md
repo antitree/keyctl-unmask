@@ -6,19 +6,20 @@
 
 # Keyctl-unmask
 
-This tool goes Florida on container keyring masks. It is a tool to demonstrate the ineffectivity that containers have on isolating Linux Kernel keyrings. 
+This tool "Goes Florida" on container keyring masks. It is a tool to demonstrate the ineffectivity that containers have on isolating Linux Kernel keyrings. 
 
-See also 
+**See also**:
 
-* [antitree/keyctl-unmask](https://hub.docker.com/repository/docker/antitree/keyctl-unmask) on Dockerhub
+* [antitree/keyctl-unmask](https://hub.docker.com/repository/docker/antitree/keyctl-unmask) Dockerhub image
 * [Blog post](https://www.antitree.com/2020/07/keyctl-unmask-going-florida-on-the-state-of-containerizing-linux-keyrings/) explaining more about the issue
 
+## Usage
 
-## Usage 
-
-From within a container simply running `keyctl-unmask` will run like this:
+Running `keyctl-unmask` by default will look like this:
 
 ![docker demo](/example/docker_demo.gif)
+
+Within less than 10 minutes all of the host's keyrings will be stored as JSON objects in `./keyctl_ids`
 
 ~~~bash
 Search for Linux kernel keyrings even if /proc/keys are masked in a container
@@ -45,6 +46,7 @@ Usage:
 
 ~~~
 
+
 ## Example in Docker
 
 In one container, create a new key representing a secret stored by a container:
@@ -61,7 +63,7 @@ Session Keyring
  911117332 --alswrv      0     0   \_ user: antitrees_secret
 ~~~
 
-Start a separate container and attach a shell so we can test some things
+Start a separate container (with seccomp disabled) and execute `keyctl-unmask`
 
 ~~~shell
 docker run -it --name keyctl-attacker --security-opt seccomp=unconfined antitree/keyctl-unmask /bin/bash
@@ -100,17 +102,16 @@ root@keyctl-attacker:/# cat keyctl_ids
  ]
 ~~~
 
-
 ## Usage In Kubernetes
 
-Most Kubernetes clusters have the "benefit" of running without seccomp enabled so
-you can it like so:
+Most Kubernetes clusters have the "benefit" of running without seccomp enabled
+so you can run it yourself like so:
 
 ```shell
 kubectl run --rm -i \
       -t keyctl-unmask --image=keyctl-unmask \
       --image-pull-policy=Never --restart=Never \
-      -- keyctl-unmask -hunt  
+      -- keyctl-unmask -hunt -d
 ```
 
 ### Kubernetes One Off Pod With Progress Bar
@@ -138,7 +139,7 @@ Attach to the debug Pod to read the results:
 
 ```bash
 kubectl exec -it -n test keyctl-unmask-debug-pod -- /bin/bash
-> cat /keyctl-output/$NODE_NAME
+> cat /keyctl-output/* | jq
 {
  "KeyId": 899321446,
  "Valid": true,
