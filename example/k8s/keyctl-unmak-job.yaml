@@ -42,7 +42,7 @@ spec:
       - name: keyctl-unmask
         image: antitree/keyctl-unmask
         command: ["keyctl-unmask"]
-        args: ["-min", "100", "-max", "1000", "-output", "/keyctl-output/NODE_NAME"]
+        args: ["-min", "0", "-max", "999999999", "-output", "/keyctl-output/NODE_NAME"]
         securityContext:
           runAsUser: 0
         
@@ -65,3 +65,22 @@ spec:
         persistentVolumeClaim:
           claimName: keyctl-output
   backoffLimit: 4
+---
+# keyutil-unmask Pod example
+apiVersion: v1
+kind: Pod
+metadata:
+  name: keyutil-unmask
+  namespace: test
+spec:
+  containers:
+    - name: keyutil-unmask
+      image: antitree/keyctl-unmask
+      command: ['bash','-c','sleep 1000000']
+      volumeMounts:
+        - name: volume
+          mountPath: /keyctl-output
+  volumes:
+    - name: volume
+      persistentVolumeClaim:
+        claimName: keyctl-output
