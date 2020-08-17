@@ -169,7 +169,10 @@ Lets not say that user namespacing is a solution when enabling it breaks so many
 **Everyone knows about this issue, this isn't new**
 
 That this isn't new is mostly true in that it's been discussed since 2014 but it's been considered generally fixed since 
-we added masks to `/proc/keys` and fixed it via seccomp. 
+Docker added masks to `/proc/keys` and fixed it via seccomp. Furthermore, people are doing great work to fix this and modern kernels
+will have solved this by simpley checking the [UID of the syscall making the request to read a key](https://github.com/torvalds/linux/commit/ae5906ceee038ea29ff5162d1bcd18fb50af8b94#diff-6aa6955e244e0fd5e8b5449001823ab7R1755)
+but at the time of writing this, most environments (including cloud) did not have this feature. So it's not new, but it's not
+fixed either. 
 
 **No one uses keyrings**
 
@@ -181,6 +184,7 @@ containers in that every container can access any other container's keyrings inc
 1. Ensure that your container runtimes have support for namespaced keyrings: [It's possible](https://lwn.net/Articles/779895/), if anyone cares.
 2. Make some of the protections that seccomp provides like blocking `KEYCTL` syscalls completely a compiled in security control .
 3. Make seccomp usable in our runtimes. (See separate rant)
+4. Update to the latest kernel
 
 ## Known Issues
 
