@@ -9,7 +9,7 @@ import (
 	"os/user"
 	"strings"
 
-	"github.com/cheggaaa/pb"
+	"github.com/cheggaaa/pb/v3"
 )
 
 var debugSyscalls bool
