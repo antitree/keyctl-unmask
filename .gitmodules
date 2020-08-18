@@ -1,3 +1,1 @@
-[submodule "example/docker-kerberos"]
-	path = example/docker-kerberos
-	url = git@github.com:ist-dsi/docker-kerberos.git
+
