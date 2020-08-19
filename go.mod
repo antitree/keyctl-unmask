@@ -1,4 +1,4 @@
-module keyctl-unmask
+module github.com/antitree/keyctl-unmask
 
 go 1.15
 
