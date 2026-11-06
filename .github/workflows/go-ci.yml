@@ -1,0 +1,32 @@
+name: Go build and test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Resolve legacy Go module checksums
+        run: go mod tidy
+      - name: Report uncommitted module changes
+        run: git status --short -- go.mod go.sum
+      - name: Build
+        run: go build ./...
+      - name: Run tests and vet
+        run: go test ./...

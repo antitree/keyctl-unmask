@@ -98,7 +98,7 @@ func main() {
 	// Just return an individual key if you want
 	// TODO update to use the linking stuff
 	if keyid != 0 {
-		Info.Println("Key read mode enabled for key: " + string(keyid))
+		Info.Println("Key read mode enabled for key: " + fmt.Sprint(keyid))
 		k := Key{KeyId: int32(keyid)}
 		key_results, err := k.describeKeyId()
 		//key_results, err := describeKeyId(keyId(keyid))
